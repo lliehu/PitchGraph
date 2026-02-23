@@ -14,6 +14,7 @@ public:
     explicit PitchGraphWidget(QWidget* parent = nullptr);
 
     void addPitchPoint(float frequency, float confidence);
+    void addAudioSamples(const float* data, unsigned int size);
     void clear();
 
     // Configuration
@@ -30,7 +31,13 @@ private:
         float confidence;  // 0.0 to 1.0
     };
 
+    struct WaveformData {
+        qint64 timestamp;
+        std::vector<float> samples;
+    };
+
     std::deque<PitchPoint> pitchData_;
+    std::deque<WaveformData> waveformData_;
     QTimer* updateTimer_;
 
     // Configuration
@@ -39,7 +46,9 @@ private:
     float maxFreq_;
 
     void removeOldData();
+    void removeOldWaveformData();
     void drawGrid(QPainter& painter);
+    void drawWaveform(QPainter& painter);
     void drawPitchCurve(QPainter& painter);
 };
 

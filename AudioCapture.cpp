@@ -2,7 +2,7 @@
 #include <cstring>
 
 AudioCapture::AudioCapture(QObject* parent)
-    : QThread(parent), pulseAudio_(nullptr), running_(false), bufferSize_(2048) {
+    : QThread(parent), pulseAudio_(nullptr), running_(false), bufferSize_(4096) {
 }
 
 AudioCapture::~AudioCapture() {

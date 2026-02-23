@@ -23,12 +23,41 @@ void PitchGraphWidget::addPitchPoint(float frequency, float confidence) {
         point.confidence = confidence;
         pitchData_.push_back(point);
 
+        // Limit pitch data to prevent excessive memory usage
+        // Keep max 1000 points (enough for smooth visualization)
+        if (pitchData_.size() > 1000) {
+            pitchData_.pop_front();
+        }
+
         removeOldData();
     }
 }
 
+void PitchGraphWidget::addAudioSamples(const float* data, unsigned int size) {
+    WaveformData waveform;
+    waveform.timestamp = QDateTime::currentMSecsSinceEpoch();
+
+    // Downsample the audio data for visualization (take every Nth sample)
+    unsigned int downsampleFactor = 16; // Increased from 4 to reduce memory usage
+    waveform.samples.reserve(size / downsampleFactor);
+    for (unsigned int i = 0; i < size; i += downsampleFactor) {
+        waveform.samples.push_back(data[i]);
+    }
+
+    waveformData_.push_back(waveform);
+
+    // Limit waveform data to prevent memory buildup
+    // Keep only last 100 chunks (about 5 seconds at 44.1kHz with 2048 buffer)
+    if (waveformData_.size() > 100) {
+        waveformData_.pop_front();
+    }
+
+    removeOldWaveformData();
+}
+
 void PitchGraphWidget::clear() {
     pitchData_.clear();
+    waveformData_.clear();
     update();
 }
 
@@ -41,6 +70,15 @@ void PitchGraphWidget::removeOldData() {
     }
 }
 
+void PitchGraphWidget::removeOldWaveformData() {
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+    qint64 cutoff = now - (timeWindowSeconds_ * 1000);
+
+    while (!waveformData_.empty() && waveformData_.front().timestamp < cutoff) {
+        waveformData_.pop_front();
+    }
+}
+
 void PitchGraphWidget::paintEvent(QPaintEvent* event) {
     Q_UNUSED(event);
 
@@ -48,6 +86,7 @@ void PitchGraphWidget::paintEvent(QPaintEvent* event) {
     painter.setRenderHint(QPainter::Antialiasing);
 
     drawGrid(painter);
+    drawWaveform(painter);
     drawPitchCurve(painter);
 }
 
@@ -89,6 +128,63 @@ void PitchGraphWidget::drawGrid(QPainter& painter) {
 
     // Time label
     painter.drawText(w - 100, h - 10, QString("%1 seconds").arg(timeWindowSeconds_));
+}
+
+void PitchGraphWidget::drawWaveform(QPainter& painter) {
+    if (waveformData_.empty()) {
+        return;
+    }
+
+    removeOldWaveformData();
+
+    int w = width();
+    int h = height();
+    int centerY = h / 2;
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+    qint64 timeWindow = timeWindowSeconds_ * 1000;
+
+    // Draw waveform in light gray behind the pitch curve
+    painter.setPen(QPen(QColor(200, 200, 200), 1));
+
+    for (const auto& waveform : waveformData_) {
+        qint64 age = now - waveform.timestamp;
+        float timeRatio = 1.0f - (static_cast<float>(age) / timeWindow);
+
+        if (timeRatio < 0.0f || timeRatio > 1.0f) {
+            continue;
+        }
+
+        // Calculate starting x position for this waveform chunk
+        int baseX = static_cast<int>(timeRatio * w);
+
+        // Calculate width per sample based on time window and sample count
+        float samplesPerPixel = static_cast<float>(waveform.samples.size()) / (w * 0.05f);
+        float pixelWidth = 1.0f / samplesPerPixel;
+
+        QPointF prevPoint;
+        bool firstPoint = true;
+
+        for (size_t i = 0; i < waveform.samples.size(); ++i) {
+            // Map sample position to x coordinate
+            int x = baseX - static_cast<int>(i * pixelWidth);
+
+            if (x < 0) break;
+
+            // Map amplitude (-1.0 to 1.0) to y coordinate
+            // Scale down the amplitude for better visualization (30% of half height)
+            float amplitude = waveform.samples[i];
+            int y = centerY - static_cast<int>(amplitude * h * 0.15f);
+
+            QPointF currentPoint(x, y);
+
+            if (!firstPoint) {
+                painter.drawLine(prevPoint, currentPoint);
+            }
+
+            prevPoint = currentPoint;
+            firstPoint = false;
+        }
+    }
 }
 
 void PitchGraphWidget::drawPitchCurve(QPainter& painter) {

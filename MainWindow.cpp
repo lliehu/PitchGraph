@@ -8,8 +8,10 @@ MainWindow::MainWindow(QWidget *parent)
     resize(900, 600);
 
     // Initialize audio capture and pitch detector
+    // Using 48000 Hz sample rate for better pitch detection accuracy
+    // Using 4096 buffer size for better low-frequency detection in music
     audioCapture_ = new AudioCapture(this);
-    pitchDetector_ = new PitchDetector(44100, 2048);
+    pitchDetector_ = new PitchDetector(48000, 4096);
 
     // Connect signals
     connect(audioCapture_, &AudioCapture::audioDataReady, this, &MainWindow::onAudioDataReady);
@@ -61,7 +63,7 @@ void MainWindow::setupUi() {
 void MainWindow::onStartStopClicked() {
     if (!isCapturing_) {
         // Start capturing
-        if (audioCapture_->start(44100)) {
+        if (audioCapture_->start(48000)) {
             isCapturing_ = true;
             startStopButton_->setText("Stop Capture");
             statusLabel_->setText("Status: Capturing...");
@@ -81,6 +83,9 @@ void MainWindow::onStartStopClicked() {
 }
 
 void MainWindow::onAudioDataReady(const float* data, unsigned int size) {
+    // Add raw audio samples to waveform visualization
+    graphWidget_->addAudioSamples(data, size);
+
     // Detect pitch from audio data
     float pitch = pitchDetector_->detectPitch(data, size);
     float confidence = pitchDetector_->getConfidence();

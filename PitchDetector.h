@@ -17,11 +17,15 @@ public:
 
 private:
     aubio_pitch_t* pitch_;
+    aubio_filter_t* bandpassFilter_;
     fvec_t* inputBuffer_;
+    fvec_t* filteredBuffer_;
     fvec_t* outputBuffer_;
     unsigned int sampleRate_;
     unsigned int bufferSize_;
     float confidence_;
+
+    void applyVoiceRangeFilter(const float* input, float* output, unsigned int size);
 };
 
 #endif // PITCHDETECTOR_H
