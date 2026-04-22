@@ -69,7 +69,7 @@ void AudioCapture::run() {
             break;
         }
 
-        // Emit audio data
-        emit audioDataReady(buffer.data(), bufferSize_);
+        // Emit a deep-copied buffer so cross-thread delivery is safe.
+        emit audioDataReady(QVector<float>(buffer.begin(), buffer.end()));
     }
 }

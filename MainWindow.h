@@ -19,7 +19,7 @@ public:
 private slots:
     void onStartStopClicked();
     void onExportClicked();
-    void onAudioDataReady(const float* data, unsigned int size);
+    void onAudioDataReady(const QVector<float>& data);
     void onAudioError(const QString& message);
 
 private:

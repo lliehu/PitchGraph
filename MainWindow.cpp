@@ -16,7 +16,7 @@ MainWindow::MainWindow(QWidget *parent)
     pitchDetector_ = new PitchDetector(48000, 4096);
 
     // Connect signals
-    connect(audioCapture_, &AudioCapture::audioDataReady, this, &MainWindow::onAudioDataReady);
+    connect(audioCapture_, &AudioCapture::audioDataReady, this, &MainWindow::onAudioDataReady, Qt::QueuedConnection);
     connect(audioCapture_, &AudioCapture::error, this, &MainWindow::onAudioError);
 
     setupUi();
@@ -90,12 +90,12 @@ void MainWindow::onStartStopClicked() {
     }
 }
 
-void MainWindow::onAudioDataReady(const float* data, unsigned int size) {
+void MainWindow::onAudioDataReady(const QVector<float>& data) {
     // Add raw audio samples to waveform visualization
-    graphWidget_->addAudioSamples(data, size);
+    graphWidget_->addAudioSamples(data.constData(), static_cast<unsigned int>(data.size()));
 
     // Detect pitch from audio data
-    float pitch = pitchDetector_->detectPitch(data, size);
+    float pitch = pitchDetector_->detectPitch(data.constData(), static_cast<unsigned int>(data.size()));
     float confidence = pitchDetector_->getConfidence();
 
     // Update graph with detected pitch

@@ -2,6 +2,7 @@
 #define AUDIOCAPTURE_H
 
 #include <QThread>
+#include <QVector>
 #include <pulse/simple.h>
 #include <pulse/error.h>
 #include <atomic>
@@ -17,7 +18,7 @@ public:
     void stop();
 
 signals:
-    void audioDataReady(const float* data, unsigned int size);
+    void audioDataReady(const QVector<float>& data);
     void error(const QString& message);
 
 protected:
