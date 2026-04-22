@@ -44,6 +44,7 @@ private:
 
     // Configuration
     int timeWindowSeconds_;
+    int retentionSeconds_;
     float minFreq_;
     float maxFreq_;
 

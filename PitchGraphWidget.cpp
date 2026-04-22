@@ -6,7 +6,7 @@
 #include <cmath>
 
 PitchGraphWidget::PitchGraphWidget(QWidget* parent)
-    : QWidget(parent), timeWindowSeconds_(10), minFreq_(50.0f), maxFreq_(1000.0f) {
+    : QWidget(parent), timeWindowSeconds_(10), retentionSeconds_(120), minFreq_(50.0f), maxFreq_(1000.0f) {
 
     setMinimumSize(400, 300);
     setStyleSheet("background-color: white;");
@@ -25,9 +25,8 @@ void PitchGraphWidget::addPitchPoint(float frequency, float confidence, qint64 t
         point.confidence = confidence;
         pitchData_.push_back(point);
 
-        // Limit pitch data to prevent excessive memory usage
-        // Keep max 1000 points (enough for smooth visualization)
-        if (pitchData_.size() > 1000) {
+        // Keep enough history for export/debug while bounding memory.
+        if (pitchData_.size() > 6000) {
             pitchData_.pop_front();
         }
 
@@ -48,9 +47,8 @@ void PitchGraphWidget::addAudioSamples(const float* data, unsigned int size) {
 
     waveformData_.push_back(waveform);
 
-    // Limit waveform data to prevent memory buildup
-    // Keep only last 100 chunks (about 5 seconds at 44.1kHz with 2048 buffer)
-    if (waveformData_.size() > 100) {
+    // Keep enough history for export/debug while bounding memory.
+    if (waveformData_.size() > 3000) {
         waveformData_.pop_front();
     }
 
@@ -116,7 +114,7 @@ bool PitchGraphWidget::exportToTextFile(const QString& filePath, QString* errorM
 
 void PitchGraphWidget::removeOldData() {
     qint64 now = QDateTime::currentMSecsSinceEpoch();
-    qint64 cutoff = now - (timeWindowSeconds_ * 1000);
+    qint64 cutoff = now - (retentionSeconds_ * 1000);
 
     while (!pitchData_.empty() && pitchData_.front().timestamp < cutoff) {
         pitchData_.pop_front();
@@ -125,7 +123,7 @@ void PitchGraphWidget::removeOldData() {
 
 void PitchGraphWidget::removeOldWaveformData() {
     qint64 now = QDateTime::currentMSecsSinceEpoch();
-    qint64 cutoff = now - (timeWindowSeconds_ * 1000);
+    qint64 cutoff = now - (retentionSeconds_ * 1000);
 
     while (!waveformData_.empty() && waveformData_.front().timestamp < cutoff) {
         waveformData_.pop_front();
