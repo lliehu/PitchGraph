@@ -14,7 +14,7 @@ class PitchGraphWidget : public QWidget {
 public:
     explicit PitchGraphWidget(QWidget* parent = nullptr);
 
-    void addPitchPoint(float frequency, float confidence);
+    void addPitchPoint(float frequency, float confidence, qint64 timestampMs = -1);
     void addAudioSamples(const float* data, unsigned int size);
     void clear();
     bool exportToTextFile(const QString& filePath, QString* errorMessage = nullptr) const;

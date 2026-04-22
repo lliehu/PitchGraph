@@ -3,6 +3,7 @@
 
 #include <QMainWindow>
 #include <QPushButton>
+#include <QtGlobal>
 #include <QVBoxLayout>
 #include <QLabel>
 #include "PitchGraphWidget.h"
@@ -34,6 +35,8 @@ private:
     PitchDetector* pitchDetector_;
 
     bool isCapturing_;
+    qint64 captureStartTimestampMs_;
+    quint64 totalSamplesProcessed_;
 };
 
 #endif // MAINWINDOW_H

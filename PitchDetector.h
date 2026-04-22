@@ -2,11 +2,12 @@
 #define PITCHDETECTOR_H
 
 #include <aubio/aubio.h>
+#include <deque>
 #include <vector>
 
 class PitchDetector {
 public:
-    PitchDetector(unsigned int sampleRate = 44100, unsigned int bufferSize = 2048);
+    PitchDetector(unsigned int sampleRate = 44100, unsigned int windowSize = 2048, unsigned int hopSize = 256);
     ~PitchDetector();
 
     // Process audio buffer and return detected pitch in Hz
@@ -17,15 +18,15 @@ public:
 
 private:
     aubio_pitch_t* pitch_;
-    aubio_filter_t* bandpassFilter_;
-    fvec_t* inputBuffer_;
-    fvec_t* filteredBuffer_;
+    fvec_t* hopBuffer_;
     fvec_t* outputBuffer_;
     unsigned int sampleRate_;
-    unsigned int bufferSize_;
+    unsigned int windowSize_;
+    unsigned int hopSize_;
     float confidence_;
-
-    void applyVoiceRangeFilter(const float* input, float* output, unsigned int size);
+    float lastPitchHz_;
+    std::vector<float> pendingSamples_;
+    std::deque<float> recentVoicedPitches_;
 };
 
 #endif // PITCHDETECTOR_H

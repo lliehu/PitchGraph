@@ -4,16 +4,16 @@
 #include <QMessageBox>
 
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent), isCapturing_(false) {
+    : QMainWindow(parent), isCapturing_(false), captureStartTimestampMs_(0), totalSamplesProcessed_(0) {
 
     setWindowTitle("PitchGraph - Real-time Pitch Detection");
     resize(900, 600);
 
     // Initialize audio capture and pitch detector
     // Using 48000 Hz sample rate for better pitch detection accuracy
-    // Using 4096 buffer size for better low-frequency detection in music
+    // 2048/256 analysis is tuned for speech intonation tracking (pitch accent contour)
     audioCapture_ = new AudioCapture(this);
-    pitchDetector_ = new PitchDetector(48000, 4096);
+    pitchDetector_ = new PitchDetector(48000, 2048, 256);
 
     // Connect signals
     connect(audioCapture_, &AudioCapture::audioDataReady, this, &MainWindow::onAudioDataReady, Qt::QueuedConnection);
@@ -73,6 +73,8 @@ void MainWindow::onStartStopClicked() {
         // Start capturing
         if (audioCapture_->start(48000)) {
             isCapturing_ = true;
+            captureStartTimestampMs_ = QDateTime::currentMSecsSinceEpoch();
+            totalSamplesProcessed_ = 0;
             startStopButton_->setText("Stop Capture");
             statusLabel_->setText("Status: Capturing...");
             statusLabel_->setStyleSheet("font-weight: bold; padding: 5px; color: green;");
@@ -91,6 +93,8 @@ void MainWindow::onStartStopClicked() {
 }
 
 void MainWindow::onAudioDataReady(const QVector<float>& data) {
+    constexpr unsigned int sampleRate = 48000;
+
     // Add raw audio samples to waveform visualization
     graphWidget_->addAudioSamples(data.constData(), static_cast<unsigned int>(data.size()));
 
@@ -98,9 +102,15 @@ void MainWindow::onAudioDataReady(const QVector<float>& data) {
     float pitch = pitchDetector_->detectPitch(data.constData(), static_cast<unsigned int>(data.size()));
     float confidence = pitchDetector_->getConfidence();
 
+    // Timestamp from sample clock to avoid UI-event jitter collapsing contour timing.
+    const qint64 chunkCenterTs =
+        captureStartTimestampMs_ +
+        static_cast<qint64>(((totalSamplesProcessed_ + (data.size() / 2.0)) * 1000.0) / sampleRate);
+    totalSamplesProcessed_ += static_cast<quint64>(data.size());
+
     // Update graph with detected pitch
     if (pitch > 0.0f) {
-        graphWidget_->addPitchPoint(pitch, confidence);
+        graphWidget_->addPitchPoint(pitch, confidence, chunkCenterTs);
     }
 }
 

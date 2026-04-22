@@ -17,10 +17,10 @@ PitchGraphWidget::PitchGraphWidget(QWidget* parent)
     updateTimer_->start(33); // ~30 FPS
 }
 
-void PitchGraphWidget::addPitchPoint(float frequency, float confidence) {
+void PitchGraphWidget::addPitchPoint(float frequency, float confidence, qint64 timestampMs) {
     if (frequency > 0.0f) {
         PitchPoint point;
-        point.timestamp = QDateTime::currentMSecsSinceEpoch();
+        point.timestamp = (timestampMs >= 0) ? timestampMs : QDateTime::currentMSecsSinceEpoch();
         point.frequency = frequency;
         point.confidence = confidence;
         pitchData_.push_back(point);
