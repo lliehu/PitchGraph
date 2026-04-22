@@ -2,6 +2,7 @@
 #define PITCHGRAPHWIDGET_H
 
 #include <QWidget>
+#include <QString>
 #include <QPainter>
 #include <QTimer>
 #include <deque>
@@ -16,6 +17,7 @@ public:
     void addPitchPoint(float frequency, float confidence);
     void addAudioSamples(const float* data, unsigned int size);
     void clear();
+    bool exportToTextFile(const QString& filePath, QString* errorMessage = nullptr) const;
 
     // Configuration
     void setTimeWindow(int seconds) { timeWindowSeconds_ = seconds; }

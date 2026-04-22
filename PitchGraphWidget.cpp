@@ -1,6 +1,8 @@
 #include "PitchGraphWidget.h"
 #include <QDateTime>
+#include <QFile>
 #include <QPen>
+#include <QTextStream>
 #include <cmath>
 
 PitchGraphWidget::PitchGraphWidget(QWidget* parent)
@@ -59,6 +61,57 @@ void PitchGraphWidget::clear() {
     pitchData_.clear();
     waveformData_.clear();
     update();
+}
+
+bool PitchGraphWidget::exportToTextFile(const QString& filePath, QString* errorMessage) const {
+    QFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        if (errorMessage != nullptr) {
+            *errorMessage = file.errorString();
+        }
+        return false;
+    }
+
+    QTextStream out(&file);
+    out << "PitchGraph Export\n";
+    out << "GeneratedAt=" << QDateTime::currentDateTime().toString(Qt::ISODateWithMs) << "\n";
+    out << "TimeWindowSeconds=" << timeWindowSeconds_ << "\n";
+    out << "FrequencyRangeHz=" << minFreq_ << "," << maxFreq_ << "\n";
+    out << "PitchPointsCount=" << pitchData_.size() << "\n";
+    out << "WaveformChunksCount=" << waveformData_.size() << "\n\n";
+
+    out << "[PitchPoints]\n";
+    out << "TimestampMs,TimestampIso,FrequencyHz,Confidence\n";
+    for (const auto& point : pitchData_) {
+        out << point.timestamp << ","
+            << QDateTime::fromMSecsSinceEpoch(point.timestamp).toString(Qt::ISODateWithMs) << ","
+            << point.frequency << ","
+            << point.confidence << "\n";
+    }
+
+    out << "\n[WaveformChunks]\n";
+    out << "TimestampMs,TimestampIso,Samples\n";
+    for (const auto& chunk : waveformData_) {
+        out << chunk.timestamp << ","
+            << QDateTime::fromMSecsSinceEpoch(chunk.timestamp).toString(Qt::ISODateWithMs) << ",";
+
+        for (size_t i = 0; i < chunk.samples.size(); ++i) {
+            if (i > 0) {
+                out << ";";
+            }
+            out << chunk.samples[i];
+        }
+        out << "\n";
+    }
+
+    if (out.status() != QTextStream::Ok) {
+        if (errorMessage != nullptr) {
+            *errorMessage = QStringLiteral("Failed while writing data.");
+        }
+        return false;
+    }
+
+    return true;
 }
 
 void PitchGraphWidget::removeOldData() {

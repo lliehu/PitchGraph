@@ -18,6 +18,7 @@ public:
 
 private slots:
     void onStartStopClicked();
+    void onExportClicked();
     void onAudioDataReady(const float* data, unsigned int size);
     void onAudioError(const QString& message);
 
@@ -26,6 +27,7 @@ private:
 
     PitchGraphWidget* graphWidget_;
     QPushButton* startStopButton_;
+    QPushButton* exportButton_;
     QLabel* statusLabel_;
 
     AudioCapture* audioCapture_;

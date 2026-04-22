@@ -1,4 +1,6 @@
 #include "MainWindow.h"
+#include <QDateTime>
+#include <QDir>
 #include <QMessageBox>
 
 MainWindow::MainWindow(QWidget *parent)
@@ -47,6 +49,12 @@ void MainWindow::setupUi() {
     connect(startStopButton_, &QPushButton::clicked, this, &MainWindow::onStartStopClicked);
     layout->addWidget(startStopButton_);
 
+    // Create export button
+    exportButton_ = new QPushButton("Export", this);
+    exportButton_->setMinimumHeight(40);
+    connect(exportButton_, &QPushButton::clicked, this, &MainWindow::onExportClicked);
+    layout->addWidget(exportButton_);
+
     // Add info label
     QLabel* infoLabel = new QLabel(
         "This application captures system audio and displays detected pitch in real-time.\n"
@@ -94,6 +102,24 @@ void MainWindow::onAudioDataReady(const float* data, unsigned int size) {
     if (pitch > 0.0f) {
         graphWidget_->addPitchPoint(pitch, confidence);
     }
+}
+
+void MainWindow::onExportClicked() {
+    const QString fileName =
+        QString("pitch_graph_export_%1.txt").arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss"));
+    const QString filePath = QDir::current().filePath(fileName);
+
+    QString errorMessage;
+    if (!graphWidget_->exportToTextFile(filePath, &errorMessage)) {
+        QMessageBox::critical(
+            this,
+            "Export Failed",
+            QString("Could not export pitch graph to:\n%1\n\nReason: %2").arg(filePath, errorMessage)
+        );
+        return;
+    }
+
+    QMessageBox::information(this, "Export Complete", QString("Pitch graph exported to:\n%1").arg(filePath));
 }
 
 void MainWindow::onAudioError(const QString& message) {
