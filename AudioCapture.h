@@ -1,13 +1,27 @@
 #ifndef AUDIOCAPTURE_H
 #define AUDIOCAPTURE_H
 
+#include <QObject>
 #include <QThread>
 #include <QVector>
-#include <pulse/simple.h>
-#include <pulse/error.h>
-#include <atomic>
+#include <memory>
 
-class AudioCapture : public QThread {
+class AudioCaptureBackend : public QThread {
+    Q_OBJECT
+
+public:
+    explicit AudioCaptureBackend(QObject* parent = nullptr) : QThread(parent) {}
+    ~AudioCaptureBackend() override = default;
+
+    virtual bool start(unsigned int sampleRate = 44100) = 0;
+    virtual void stop() = 0;
+
+signals:
+    void audioDataReady(const QVector<float>& data);
+    void error(const QString& message);
+};
+
+class AudioCapture : public QObject {
     Q_OBJECT
 
 public:
@@ -21,14 +35,8 @@ signals:
     void audioDataReady(const QVector<float>& data);
     void error(const QString& message);
 
-protected:
-    void run() override;
-
 private:
-    pa_simple* pulseAudio_;
-    pa_sample_spec sampleSpec_;
-    std::atomic<bool> running_;
-    unsigned int bufferSize_;
+    std::unique_ptr<AudioCaptureBackend> backend_;
 };
 
 #endif // AUDIOCAPTURE_H

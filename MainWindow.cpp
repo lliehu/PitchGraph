@@ -58,7 +58,7 @@ void MainWindow::setupUi() {
     // Add info label
     QLabel* infoLabel = new QLabel(
         "This application captures system audio and displays detected pitch in real-time.\n"
-        "Make sure PulseAudio is running and play some audio to see the pitch graph.",
+        "Start capture, then play system audio to see the pitch graph update.",
         this
     );
     infoLabel->setWordWrap(true);
@@ -80,7 +80,7 @@ void MainWindow::onStartStopClicked() {
             statusLabel_->setStyleSheet("font-weight: bold; padding: 5px; color: green;");
             graphWidget_->clear();
         } else {
-            QMessageBox::critical(this, "Error", "Failed to start audio capture. Make sure PulseAudio is running.");
+            QMessageBox::critical(this, "Error", "Failed to start audio capture. Check your system audio device.");
         }
     } else {
         // Stop capturing
