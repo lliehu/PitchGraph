@@ -47,7 +47,7 @@ void MainWindow::setupUi() {
     controlsLayout->setSpacing(6);
 
     // Start/stop button
-    startStopButton_ = new QPushButton("Start Capture", this);
+    startStopButton_ = new QPushButton("▶", this);
     startStopButton_->setFixedHeight(28);
     connect(startStopButton_, &QPushButton::clicked, this, &MainWindow::onStartStopClicked);
     controlsLayout->addWidget(startStopButton_);
@@ -124,7 +124,7 @@ void MainWindow::onStartStopClicked() {
             isCapturing_ = true;
             captureStartTimestampMs_ = QDateTime::currentMSecsSinceEpoch();
             totalSamplesProcessed_ = 0;
-            startStopButton_->setText("Stop Capture");
+            startStopButton_->setText("■");
             statusLabel_->setText("Capturing");
             statusLabel_->setStyleSheet("font-weight: bold; color: green;");
             graphWidget_->clear();
@@ -135,7 +135,7 @@ void MainWindow::onStartStopClicked() {
         // Stop capturing
         audioCapture_->stop();
         isCapturing_ = false;
-        startStopButton_->setText("Start Capture");
+        startStopButton_->setText("▶");
         statusLabel_->setText("Stopped");
         statusLabel_->setStyleSheet("font-weight: bold; color: red;");
     }
