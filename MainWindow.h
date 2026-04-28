@@ -36,7 +36,6 @@ private:
     QPushButton* exportButton_;
     QToolButton* advancedControlsToggleButton_;
     QWidget* advancedControlsWidget_;
-    QLabel* statusLabel_;
     QCheckBox* stayOnTopCheckBox_;
     QSlider* transparencySlider_;
     QLabel* transparencyValueLabel_;

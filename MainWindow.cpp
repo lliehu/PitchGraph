@@ -107,11 +107,6 @@ void MainWindow::setupUi() {
 
     controlsLayout->addStretch(1);
 
-    // Compact status text at the right of the controls row
-    statusLabel_ = new QLabel("Ready", this);
-    statusLabel_->setStyleSheet("font-weight: bold;");
-    controlsLayout->addWidget(statusLabel_);
-
     layout->addLayout(controlsLayout);
 
     setCentralWidget(centralWidget);
@@ -125,7 +120,6 @@ void MainWindow::onStartStopClicked() {
             captureStartTimestampMs_ = QDateTime::currentMSecsSinceEpoch();
             totalSamplesProcessed_ = 0;
             startStopButton_->setText("■");
-            statusLabel_->setText("Capturing");
             graphWidget_->clear();
         } else {
             QMessageBox::critical(this, "Error", "Failed to start audio capture. Check your system audio device.");
@@ -135,7 +129,6 @@ void MainWindow::onStartStopClicked() {
         audioCapture_->stop();
         isCapturing_ = false;
         startStopButton_->setText("▶");
-        statusLabel_->setText("Stopped");
     }
 }
 
