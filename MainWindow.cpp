@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QHBoxLayout>
 #include <QMessageBox>
+#include <QToolButton>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), isCapturing_(false), captureStartTimestampMs_(0), totalSamplesProcessed_(0) {
@@ -51,34 +52,59 @@ void MainWindow::setupUi() {
     connect(startStopButton_, &QPushButton::clicked, this, &MainWindow::onStartStopClicked);
     controlsLayout->addWidget(startStopButton_);
 
+    // Small toggle to show/hide advanced controls
+    advancedControlsToggleButton_ = new QToolButton(this);
+    advancedControlsToggleButton_->setCheckable(true);
+    advancedControlsToggleButton_->setChecked(false);
+    advancedControlsToggleButton_->setArrowType(Qt::RightArrow);
+    advancedControlsToggleButton_->setToolTip("Show extra controls");
+    advancedControlsToggleButton_->setFixedSize(22, 22);
+    controlsLayout->addWidget(advancedControlsToggleButton_);
+
+    // Advanced controls (hidden by default)
+    advancedControlsWidget_ = new QWidget(this);
+    QHBoxLayout* advancedControlsLayout = new QHBoxLayout(advancedControlsWidget_);
+    advancedControlsLayout->setContentsMargins(0, 0, 0, 0);
+    advancedControlsLayout->setSpacing(6);
+
     // Export button
-    exportButton_ = new QPushButton("Export", this);
+    exportButton_ = new QPushButton("Export", advancedControlsWidget_);
     exportButton_->setFixedHeight(28);
     connect(exportButton_, &QPushButton::clicked, this, &MainWindow::onExportClicked);
-    controlsLayout->addWidget(exportButton_);
+    advancedControlsLayout->addWidget(exportButton_);
 
     // "Stay on top" toggle
-    stayOnTopCheckBox_ = new QCheckBox("Stay on top", this);
+    stayOnTopCheckBox_ = new QCheckBox("Stay on top", advancedControlsWidget_);
     connect(stayOnTopCheckBox_, &QCheckBox::toggled, this, &MainWindow::onStayOnTopToggled);
-    controlsLayout->addWidget(stayOnTopCheckBox_);
+    advancedControlsLayout->addWidget(stayOnTopCheckBox_);
 
     // Opacity controls
-    QLabel* transparencyLabel = new QLabel("Opacity:", this);
-    transparencySlider_ = new QSlider(Qt::Horizontal, this);
+    QLabel* transparencyLabel = new QLabel("Opacity:", advancedControlsWidget_);
+    transparencySlider_ = new QSlider(Qt::Horizontal, advancedControlsWidget_);
     transparencySlider_->setRange(0, 80);
     transparencySlider_->setValue(0);
     transparencySlider_->setSingleStep(1);
     transparencySlider_->setPageStep(10);
     transparencySlider_->setFixedWidth(140);
 
-    transparencyValueLabel_ = new QLabel("0%", this);
+    transparencyValueLabel_ = new QLabel("0%", advancedControlsWidget_);
     transparencyValueLabel_->setMinimumWidth(32);
 
     connect(transparencySlider_, &QSlider::valueChanged, this, &MainWindow::onTransparencyChanged);
 
-    controlsLayout->addWidget(transparencyLabel);
-    controlsLayout->addWidget(transparencySlider_);
-    controlsLayout->addWidget(transparencyValueLabel_);
+    advancedControlsLayout->addWidget(transparencyLabel);
+    advancedControlsLayout->addWidget(transparencySlider_);
+    advancedControlsLayout->addWidget(transparencyValueLabel_);
+
+    advancedControlsWidget_->setVisible(false);
+    controlsLayout->addWidget(advancedControlsWidget_);
+
+    connect(advancedControlsToggleButton_, &QToolButton::toggled, this, [this](bool visible) {
+        advancedControlsWidget_->setVisible(visible);
+        advancedControlsToggleButton_->setArrowType(visible ? Qt::LeftArrow : Qt::RightArrow);
+        advancedControlsToggleButton_->setToolTip(visible ? "Hide extra controls" : "Show extra controls");
+    });
+
     controlsLayout->addStretch(1);
 
     // Compact status text at the right of the controls row

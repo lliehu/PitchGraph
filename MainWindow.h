@@ -8,6 +8,7 @@
 #include <QLabel>
 #include <QCheckBox>
 #include <QSlider>
+#include <QToolButton>
 #include "PitchGraphWidget.h"
 #include "AudioCapture.h"
 #include "PitchDetector.h"
@@ -33,6 +34,8 @@ private:
     PitchGraphWidget* graphWidget_;
     QPushButton* startStopButton_;
     QPushButton* exportButton_;
+    QToolButton* advancedControlsToggleButton_;
+    QWidget* advancedControlsWidget_;
     QLabel* statusLabel_;
     QCheckBox* stayOnTopCheckBox_;
     QSlider* transparencySlider_;
