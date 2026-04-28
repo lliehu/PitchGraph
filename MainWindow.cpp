@@ -34,61 +34,59 @@ void MainWindow::setupUi() {
     // Create central widget and layout
     QWidget* centralWidget = new QWidget(this);
     QVBoxLayout* layout = new QVBoxLayout(centralWidget);
-
-    // Create status label
-    statusLabel_ = new QLabel("Status: Ready", this);
-    statusLabel_->setStyleSheet("font-weight: bold; padding: 5px;");
-    layout->addWidget(statusLabel_);
+    layout->setContentsMargins(4, 4, 4, 4);
+    layout->setSpacing(4);
 
     // Create pitch graph widget
     graphWidget_ = new PitchGraphWidget(this);
-    layout->addWidget(graphWidget_);
+    layout->addWidget(graphWidget_, 1);
 
-    // Create start/stop button
+    // Create compact controls row
+    QHBoxLayout* controlsLayout = new QHBoxLayout();
+    controlsLayout->setSpacing(6);
+
+    // Start/stop button
     startStopButton_ = new QPushButton("Start Capture", this);
-    startStopButton_->setMinimumHeight(40);
+    startStopButton_->setFixedHeight(28);
     connect(startStopButton_, &QPushButton::clicked, this, &MainWindow::onStartStopClicked);
-    layout->addWidget(startStopButton_);
+    controlsLayout->addWidget(startStopButton_);
 
-    // Create export button
+    // Export button
     exportButton_ = new QPushButton("Export", this);
-    exportButton_->setMinimumHeight(40);
+    exportButton_->setFixedHeight(28);
     connect(exportButton_, &QPushButton::clicked, this, &MainWindow::onExportClicked);
-    layout->addWidget(exportButton_);
+    controlsLayout->addWidget(exportButton_);
 
-    // Create "stay on top" toggle
+    // "Stay on top" toggle
     stayOnTopCheckBox_ = new QCheckBox("Stay on top", this);
     connect(stayOnTopCheckBox_, &QCheckBox::toggled, this, &MainWindow::onStayOnTopToggled);
-    layout->addWidget(stayOnTopCheckBox_);
+    controlsLayout->addWidget(stayOnTopCheckBox_);
 
-    // Create transparency controls
-    QHBoxLayout* transparencyLayout = new QHBoxLayout();
-    QLabel* transparencyLabel = new QLabel("Transparency:", this);
+    // Opacity controls
+    QLabel* transparencyLabel = new QLabel("Opacity:", this);
     transparencySlider_ = new QSlider(Qt::Horizontal, this);
     transparencySlider_->setRange(0, 80);
     transparencySlider_->setValue(0);
     transparencySlider_->setSingleStep(1);
     transparencySlider_->setPageStep(10);
+    transparencySlider_->setFixedWidth(140);
 
     transparencyValueLabel_ = new QLabel("0%", this);
-    transparencyValueLabel_->setMinimumWidth(40);
+    transparencyValueLabel_->setMinimumWidth(32);
 
     connect(transparencySlider_, &QSlider::valueChanged, this, &MainWindow::onTransparencyChanged);
 
-    transparencyLayout->addWidget(transparencyLabel);
-    transparencyLayout->addWidget(transparencySlider_);
-    transparencyLayout->addWidget(transparencyValueLabel_);
-    layout->addLayout(transparencyLayout);
+    controlsLayout->addWidget(transparencyLabel);
+    controlsLayout->addWidget(transparencySlider_);
+    controlsLayout->addWidget(transparencyValueLabel_);
+    controlsLayout->addStretch(1);
 
-    // Add info label
-    QLabel* infoLabel = new QLabel(
-        "This application captures system audio and displays detected pitch in real-time.\n"
-        "Start capture, then play system audio to see the pitch graph update.",
-        this
-    );
-    infoLabel->setWordWrap(true);
-    infoLabel->setStyleSheet("color: gray; font-size: 10px; padding: 5px;");
-    layout->addWidget(infoLabel);
+    // Compact status text at the right of the controls row
+    statusLabel_ = new QLabel("Ready", this);
+    statusLabel_->setStyleSheet("font-weight: bold; color: #444;");
+    controlsLayout->addWidget(statusLabel_);
+
+    layout->addLayout(controlsLayout);
 
     setCentralWidget(centralWidget);
 }
@@ -101,8 +99,8 @@ void MainWindow::onStartStopClicked() {
             captureStartTimestampMs_ = QDateTime::currentMSecsSinceEpoch();
             totalSamplesProcessed_ = 0;
             startStopButton_->setText("Stop Capture");
-            statusLabel_->setText("Status: Capturing...");
-            statusLabel_->setStyleSheet("font-weight: bold; padding: 5px; color: green;");
+            statusLabel_->setText("Capturing");
+            statusLabel_->setStyleSheet("font-weight: bold; color: green;");
             graphWidget_->clear();
         } else {
             QMessageBox::critical(this, "Error", "Failed to start audio capture. Check your system audio device.");
@@ -112,8 +110,8 @@ void MainWindow::onStartStopClicked() {
         audioCapture_->stop();
         isCapturing_ = false;
         startStopButton_->setText("Start Capture");
-        statusLabel_->setText("Status: Stopped");
-        statusLabel_->setStyleSheet("font-weight: bold; padding: 5px; color: red;");
+        statusLabel_->setText("Stopped");
+        statusLabel_->setStyleSheet("font-weight: bold; color: red;");
     }
 }
 
