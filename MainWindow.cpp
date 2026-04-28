@@ -109,7 +109,7 @@ void MainWindow::setupUi() {
 
     // Compact status text at the right of the controls row
     statusLabel_ = new QLabel("Ready", this);
-    statusLabel_->setStyleSheet("font-weight: bold; color: #444;");
+    statusLabel_->setStyleSheet("font-weight: bold;");
     controlsLayout->addWidget(statusLabel_);
 
     layout->addLayout(controlsLayout);
@@ -126,7 +126,6 @@ void MainWindow::onStartStopClicked() {
             totalSamplesProcessed_ = 0;
             startStopButton_->setText("■");
             statusLabel_->setText("Capturing");
-            statusLabel_->setStyleSheet("font-weight: bold; color: green;");
             graphWidget_->clear();
         } else {
             QMessageBox::critical(this, "Error", "Failed to start audio capture. Check your system audio device.");
@@ -137,7 +136,6 @@ void MainWindow::onStartStopClicked() {
         isCapturing_ = false;
         startStopButton_->setText("▶");
         statusLabel_->setText("Stopped");
-        statusLabel_->setStyleSheet("font-weight: bold; color: red;");
     }
 }
 
