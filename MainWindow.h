@@ -6,6 +6,8 @@
 #include <QtGlobal>
 #include <QVBoxLayout>
 #include <QLabel>
+#include <QCheckBox>
+#include <QSlider>
 #include "PitchGraphWidget.h"
 #include "AudioCapture.h"
 #include "PitchDetector.h"
@@ -22,6 +24,8 @@ private slots:
     void onExportClicked();
     void onAudioDataReady(const QVector<float>& data);
     void onAudioError(const QString& message);
+    void onStayOnTopToggled(bool enabled);
+    void onTransparencyChanged(int value);
 
 private:
     void setupUi();
@@ -30,6 +34,9 @@ private:
     QPushButton* startStopButton_;
     QPushButton* exportButton_;
     QLabel* statusLabel_;
+    QCheckBox* stayOnTopCheckBox_;
+    QSlider* transparencySlider_;
+    QLabel* transparencyValueLabel_;
 
     AudioCapture* audioCapture_;
     PitchDetector* pitchDetector_;

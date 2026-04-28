@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include <QDateTime>
 #include <QDir>
+#include <QHBoxLayout>
 #include <QMessageBox>
 
 MainWindow::MainWindow(QWidget *parent)
@@ -54,6 +55,30 @@ void MainWindow::setupUi() {
     exportButton_->setMinimumHeight(40);
     connect(exportButton_, &QPushButton::clicked, this, &MainWindow::onExportClicked);
     layout->addWidget(exportButton_);
+
+    // Create "stay on top" toggle
+    stayOnTopCheckBox_ = new QCheckBox("Stay on top", this);
+    connect(stayOnTopCheckBox_, &QCheckBox::toggled, this, &MainWindow::onStayOnTopToggled);
+    layout->addWidget(stayOnTopCheckBox_);
+
+    // Create transparency controls
+    QHBoxLayout* transparencyLayout = new QHBoxLayout();
+    QLabel* transparencyLabel = new QLabel("Transparency:", this);
+    transparencySlider_ = new QSlider(Qt::Horizontal, this);
+    transparencySlider_->setRange(0, 80);
+    transparencySlider_->setValue(0);
+    transparencySlider_->setSingleStep(1);
+    transparencySlider_->setPageStep(10);
+
+    transparencyValueLabel_ = new QLabel("0%", this);
+    transparencyValueLabel_->setMinimumWidth(40);
+
+    connect(transparencySlider_, &QSlider::valueChanged, this, &MainWindow::onTransparencyChanged);
+
+    transparencyLayout->addWidget(transparencyLabel);
+    transparencyLayout->addWidget(transparencySlider_);
+    transparencyLayout->addWidget(transparencyValueLabel_);
+    layout->addLayout(transparencyLayout);
 
     // Add info label
     QLabel* infoLabel = new QLabel(
@@ -137,4 +162,18 @@ void MainWindow::onAudioError(const QString& message) {
     if (isCapturing_) {
         onStartStopClicked(); // Stop capture
     }
+}
+
+void MainWindow::onStayOnTopToggled(bool enabled) {
+    const bool wasVisible = isVisible();
+    setWindowFlag(Qt::WindowStaysOnTopHint, enabled);
+    if (wasVisible) {
+        show();
+    }
+}
+
+void MainWindow::onTransparencyChanged(int value) {
+    transparencyValueLabel_->setText(QString("%1%").arg(value));
+    const qreal opacity = 1.0 - (static_cast<qreal>(value) / 100.0);
+    setWindowOpacity(opacity);
 }
