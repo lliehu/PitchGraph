@@ -36,6 +36,8 @@ private slots:
     void onTransparencyChanged(int value);
 
 private:
+    Qt::Edges hitTestResizeEdges(const QPoint& globalPos) const;
+    void updateResizeCursor(const QPoint& globalPos);
     void setupUi();
     void updateControlsBarVisibility();
     void updateControlsBarGeometry();

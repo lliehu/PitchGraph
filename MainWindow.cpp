@@ -45,6 +45,54 @@ MainWindow::~MainWindow() {
     delete pitchDetector_;
 }
 
+Qt::Edges MainWindow::hitTestResizeEdges(const QPoint& globalPos) const {
+    if (!windowFlags().testFlag(Qt::FramelessWindowHint)) {
+        return {};
+    }
+
+    constexpr int resizeMarginPx = 8;
+    const QRect frameRect = frameGeometry();
+    if (!frameRect.adjusted(-resizeMarginPx, -resizeMarginPx, resizeMarginPx, resizeMarginPx).contains(globalPos)) {
+        return {};
+    }
+
+    Qt::Edges edges;
+    if (globalPos.x() <= frameRect.left() + resizeMarginPx) {
+        edges |= Qt::LeftEdge;
+    } else if (globalPos.x() >= frameRect.right() - resizeMarginPx) {
+        edges |= Qt::RightEdge;
+    }
+
+    if (globalPos.y() <= frameRect.top() + resizeMarginPx) {
+        edges |= Qt::TopEdge;
+    } else if (globalPos.y() >= frameRect.bottom() - resizeMarginPx) {
+        edges |= Qt::BottomEdge;
+    }
+
+    return edges;
+}
+
+void MainWindow::updateResizeCursor(const QPoint& globalPos) {
+    const Qt::Edges edges = hitTestResizeEdges(globalPos);
+    Qt::CursorShape cursorShape = Qt::ArrowCursor;
+
+    if ((edges & Qt::TopEdge) && (edges & Qt::LeftEdge)) {
+        cursorShape = Qt::SizeFDiagCursor;
+    } else if ((edges & Qt::TopEdge) && (edges & Qt::RightEdge)) {
+        cursorShape = Qt::SizeBDiagCursor;
+    } else if ((edges & Qt::BottomEdge) && (edges & Qt::LeftEdge)) {
+        cursorShape = Qt::SizeBDiagCursor;
+    } else if ((edges & Qt::BottomEdge) && (edges & Qt::RightEdge)) {
+        cursorShape = Qt::SizeFDiagCursor;
+    } else if ((edges & Qt::LeftEdge) || (edges & Qt::RightEdge)) {
+        cursorShape = Qt::SizeHorCursor;
+    } else if ((edges & Qt::TopEdge) || (edges & Qt::BottomEdge)) {
+        cursorShape = Qt::SizeVerCursor;
+    }
+
+    setCursor(cursorShape);
+}
+
 void MainWindow::setupUi() {
     // Create central widget and layout
     QWidget* centralWidget = new QWidget(this);
@@ -136,15 +184,32 @@ void MainWindow::setupUi() {
 }
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
-    const QWidget* mainCentralWidget = centralWidget();
+    const QWidget* watchedWidget = qobject_cast<QWidget*>(watched);
     const bool shouldHandleWindowEvent =
         watched == this ||
-        watched == mainCentralWidget ||
-        watched == graphWidget_ ||
-        watched == controlsBarWidget_;
+        (watchedWidget != nullptr && watchedWidget->window() == this);
 
     if (!shouldHandleWindowEvent) {
         return QMainWindow::eventFilter(watched, event);
+    }
+
+    if (event != nullptr) {
+        if (event->type() == QEvent::MouseMove || event->type() == QEvent::Enter || event->type() == QEvent::Leave) {
+            updateResizeCursor(QCursor::pos());
+        }
+
+        if (event->type() == QEvent::MouseButtonPress) {
+            const auto* mouseEvent = static_cast<QMouseEvent*>(event);
+            if (mouseEvent->button() == Qt::LeftButton) {
+                const Qt::Edges resizeEdges = hitTestResizeEdges(mouseEvent->globalPosition().toPoint());
+                if (resizeEdges != Qt::Edges()) {
+                    QWindow* handle = windowHandle();
+                    if (handle != nullptr && handle->startSystemResize(resizeEdges)) {
+                        return true;
+                    }
+                }
+            }
+        }
     }
 
     if (watched == graphWidget_ && event != nullptr) {
