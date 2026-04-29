@@ -138,12 +138,12 @@ void MainWindow::setupUi() {
     advancedControlsLayout->addWidget(exportButton_);
 
     // "Stay on top" toggle
-    stayOnTopCheckBox_ = new QCheckBox("Stay on top", advancedControlsWidget_);
+    stayOnTopCheckBox_ = new QCheckBox("On top", advancedControlsWidget_);
     connect(stayOnTopCheckBox_, &QCheckBox::toggled, this, &MainWindow::onStayOnTopToggled);
     advancedControlsLayout->addWidget(stayOnTopCheckBox_);
 
     // Hide native window frame toggle
-    hideWindowFrameCheckBox_ = new QCheckBox("Hide window frame", advancedControlsWidget_);
+    hideWindowFrameCheckBox_ = new QCheckBox("Hide frame", advancedControlsWidget_);
     connect(hideWindowFrameCheckBox_, &QCheckBox::toggled, this, &MainWindow::onHideWindowFrameToggled);
     advancedControlsLayout->addWidget(hideWindowFrameCheckBox_);
 
