@@ -10,6 +10,7 @@
 #include <QCheckBox>
 #include <QSlider>
 #include <QToolButton>
+#include <QPoint>
 #include "PitchGraphWidget.h"
 #include "AudioCapture.h"
 #include "PitchDetector.h"
@@ -57,8 +58,10 @@ private:
 
     bool isCapturing_;
     bool isLoadingSettings_;
+    bool isWindowDragActive_;
     qint64 captureStartTimestampMs_;
     quint64 totalSamplesProcessed_;
+    QPoint windowDragOffset_;
 };
 
 #endif // MAINWINDOW_H

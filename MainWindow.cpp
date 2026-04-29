@@ -6,13 +6,15 @@
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QMessageBox>
+#include <QMouseEvent>
 #include <QSettings>
 #include <QToolButton>
+#include <QWindow>
 #include <algorithm>
 
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent), isCapturing_(false), isLoadingSettings_(false), captureStartTimestampMs_(0),
-      totalSamplesProcessed_(0) {
+    : QMainWindow(parent), isCapturing_(false), isLoadingSettings_(false), isWindowDragActive_(false),
+      captureStartTimestampMs_(0), totalSamplesProcessed_(0) {
 
     setWindowTitle("PitchGraph - Real-time Pitch Detection");
     resize(900, 600);
@@ -143,6 +145,49 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
 
     if (!shouldHandleWindowEvent) {
         return QMainWindow::eventFilter(watched, event);
+    }
+
+    if (watched == graphWidget_ && event != nullptr) {
+        switch (event->type()) {
+            case QEvent::MouseButtonPress: {
+                const auto* mouseEvent = static_cast<QMouseEvent*>(event);
+                if (mouseEvent->button() == Qt::LeftButton) {
+                    QWindow* handle = windowHandle();
+                    if (handle != nullptr && handle->startSystemMove()) {
+                        return true;
+                    }
+
+                    isWindowDragActive_ = true;
+                    windowDragOffset_ = mouseEvent->globalPosition().toPoint() - frameGeometry().topLeft();
+                    return true;
+                }
+                break;
+            }
+            case QEvent::MouseMove: {
+                if (!isWindowDragActive_) {
+                    break;
+                }
+
+                const auto* mouseEvent = static_cast<QMouseEvent*>(event);
+                if (!(mouseEvent->buttons() & Qt::LeftButton)) {
+                    isWindowDragActive_ = false;
+                    break;
+                }
+
+                move(mouseEvent->globalPosition().toPoint() - windowDragOffset_);
+                return true;
+            }
+            case QEvent::MouseButtonRelease: {
+                const auto* mouseEvent = static_cast<QMouseEvent*>(event);
+                if (mouseEvent->button() == Qt::LeftButton && isWindowDragActive_) {
+                    isWindowDragActive_ = false;
+                    return true;
+                }
+                break;
+            }
+            default:
+                break;
+        }
     }
 
     if (event != nullptr) {
