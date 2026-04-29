@@ -78,6 +78,11 @@ void MainWindow::setupUi() {
     connect(stayOnTopCheckBox_, &QCheckBox::toggled, this, &MainWindow::onStayOnTopToggled);
     advancedControlsLayout->addWidget(stayOnTopCheckBox_);
 
+    // Hide native window frame toggle
+    hideWindowFrameCheckBox_ = new QCheckBox("Hide window frame", advancedControlsWidget_);
+    connect(hideWindowFrameCheckBox_, &QCheckBox::toggled, this, &MainWindow::onHideWindowFrameToggled);
+    advancedControlsLayout->addWidget(hideWindowFrameCheckBox_);
+
     // Opacity controls
     QLabel* transparencyLabel = new QLabel("Opacity:", advancedControlsWidget_);
     transparencySlider_ = new QSlider(Qt::Horizontal, advancedControlsWidget_);
@@ -182,6 +187,14 @@ void MainWindow::onAudioError(const QString& message) {
 void MainWindow::onStayOnTopToggled(bool enabled) {
     const bool wasVisible = isVisible();
     setWindowFlag(Qt::WindowStaysOnTopHint, enabled);
+    if (wasVisible) {
+        show();
+    }
+}
+
+void MainWindow::onHideWindowFrameToggled(bool enabled) {
+    const bool wasVisible = isVisible();
+    setWindowFlag(Qt::FramelessWindowHint, enabled);
     if (wasVisible) {
         show();
     }

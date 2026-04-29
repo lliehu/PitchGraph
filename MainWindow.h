@@ -26,6 +26,7 @@ private slots:
     void onAudioDataReady(const QVector<float>& data);
     void onAudioError(const QString& message);
     void onStayOnTopToggled(bool enabled);
+    void onHideWindowFrameToggled(bool enabled);
     void onTransparencyChanged(int value);
 
 private:
@@ -37,6 +38,7 @@ private:
     QToolButton* advancedControlsToggleButton_;
     QWidget* advancedControlsWidget_;
     QCheckBox* stayOnTopCheckBox_;
+    QCheckBox* hideWindowFrameCheckBox_;
     QSlider* transparencySlider_;
     QLabel* transparencyValueLabel_;
 
