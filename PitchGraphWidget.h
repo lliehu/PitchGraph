@@ -5,6 +5,7 @@
 #include <QString>
 #include <QPainter>
 #include <QTimer>
+#include <QContextMenuEvent>
 #include <deque>
 #include <utility>
 
@@ -25,6 +26,7 @@ public:
 
 protected:
     void paintEvent(QPaintEvent* event) override;
+    void contextMenuEvent(QContextMenuEvent* event) override;
 
 private:
     struct PitchPoint {

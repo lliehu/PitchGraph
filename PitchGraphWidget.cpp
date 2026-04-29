@@ -1,6 +1,10 @@
 #include "PitchGraphWidget.h"
+#include <QAction>
+#include <QApplication>
+#include <QContextMenuEvent>
 #include <QDateTime>
 #include <QFile>
+#include <QMenu>
 #include <QPen>
 #include <QTextStream>
 #include <cmath>
@@ -139,6 +143,15 @@ void PitchGraphWidget::paintEvent(QPaintEvent* event) {
     drawGrid(painter);
     drawWaveform(painter);
     drawPitchCurve(painter);
+}
+
+void PitchGraphWidget::contextMenuEvent(QContextMenuEvent* event) {
+    QMenu contextMenu(this);
+    QAction* quitAction = contextMenu.addAction("Quit");
+    QAction* selectedAction = contextMenu.exec(event->globalPos());
+    if (selectedAction == quitAction) {
+        qApp->quit();
+    }
 }
 
 void PitchGraphWidget::drawGrid(QPainter& painter) {
