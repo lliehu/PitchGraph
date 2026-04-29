@@ -8,6 +8,7 @@
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QSettings>
+#include <QShortcut>
 #include <QToolButton>
 #include <QWindow>
 #include <algorithm>
@@ -176,6 +177,9 @@ void MainWindow::setupUi() {
     controlsBarWidget_->setVisible(false);
 
     setCentralWidget(centralWidget);
+
+    auto* quitShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Q), this);
+    connect(quitShortcut, &QShortcut::activated, qApp, &QCoreApplication::quit);
 }
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
