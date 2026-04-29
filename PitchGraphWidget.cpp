@@ -263,7 +263,8 @@ void PitchGraphWidget::drawPitchCurve(QPainter& painter) {
     qint64 now = QDateTime::currentMSecsSinceEpoch();
     qint64 timeWindow = timeWindowSeconds_ * 1000;
 
-    painter.setPen(QPen(Qt::blue, 2));
+    Qt::GlobalColor pitchColor = Qt::darkGreen;
+    painter.setPen(QPen(pitchColor, 2));
 
     QPointF prevPoint;
     bool firstPoint = true;
@@ -284,7 +285,7 @@ void PitchGraphWidget::drawPitchCurve(QPainter& painter) {
         // Draw line from previous point
         if (!firstPoint) {
             // Set color based on confidence
-            QColor color = Qt::blue;
+            QColor color = pitchColor;
             color.setAlphaF(point.confidence);
             painter.setPen(QPen(color, 2));
             painter.drawLine(prevPoint, currentPoint);
@@ -294,7 +295,7 @@ void PitchGraphWidget::drawPitchCurve(QPainter& painter) {
         firstPoint = false;
 
         // Draw point
-        painter.setBrush(Qt::blue);
+        painter.setBrush(pitchColor);
         painter.drawEllipse(currentPoint, 3, 3);
     }
 }
