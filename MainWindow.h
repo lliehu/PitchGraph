@@ -20,6 +20,9 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override;
 
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
 private slots:
     void onStartStopClicked();
     void onExportClicked();
@@ -31,10 +34,13 @@ private slots:
 
 private:
     void setupUi();
+    void updateControlsBarVisibility();
+    void updateControlsBarGeometry();
 
     PitchGraphWidget* graphWidget_;
     QPushButton* startStopButton_;
     QPushButton* exportButton_;
+    QWidget* controlsBarWidget_;
     QToolButton* advancedControlsToggleButton_;
     QWidget* advancedControlsWidget_;
     QCheckBox* stayOnTopCheckBox_;

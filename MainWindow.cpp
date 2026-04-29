@@ -1,9 +1,13 @@
 #include "MainWindow.h"
+#include <QApplication>
+#include <QCursor>
 #include <QDateTime>
 #include <QDir>
+#include <QEvent>
 #include <QHBoxLayout>
 #include <QMessageBox>
 #include <QToolButton>
+#include <algorithm>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), isCapturing_(false), captureStartTimestampMs_(0), totalSamplesProcessed_(0) {
@@ -22,9 +26,13 @@ MainWindow::MainWindow(QWidget *parent)
     connect(audioCapture_, &AudioCapture::error, this, &MainWindow::onAudioError);
 
     setupUi();
+    qApp->installEventFilter(this);
+    updateControlsBarGeometry();
+    updateControlsBarVisibility();
 }
 
 MainWindow::~MainWindow() {
+    qApp->removeEventFilter(this);
     if (isCapturing_) {
         audioCapture_->stop();
     }
@@ -43,7 +51,9 @@ void MainWindow::setupUi() {
     layout->addWidget(graphWidget_, 1);
 
     // Create compact controls row
-    QHBoxLayout* controlsLayout = new QHBoxLayout();
+    controlsBarWidget_ = new QWidget(centralWidget);
+    QHBoxLayout* controlsLayout = new QHBoxLayout(controlsBarWidget_);
+    controlsLayout->setContentsMargins(0, 0, 0, 0);
     controlsLayout->setSpacing(6);
 
     // Start/stop button
@@ -108,13 +118,84 @@ void MainWindow::setupUi() {
         advancedControlsWidget_->setVisible(visible);
         advancedControlsToggleButton_->setArrowType(visible ? Qt::LeftArrow : Qt::RightArrow);
         advancedControlsToggleButton_->setToolTip(visible ? "Hide extra controls" : "Show extra controls");
+        updateControlsBarGeometry();
     });
 
     controlsLayout->addStretch(1);
 
-    layout->addLayout(controlsLayout);
+    controlsBarWidget_->setVisible(false);
 
     setCentralWidget(centralWidget);
+}
+
+bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
+    const QWidget* mainCentralWidget = centralWidget();
+    const bool shouldHandleWindowEvent =
+        watched == this ||
+        watched == mainCentralWidget ||
+        watched == graphWidget_ ||
+        watched == controlsBarWidget_;
+
+    if (!shouldHandleWindowEvent) {
+        return QMainWindow::eventFilter(watched, event);
+    }
+
+    if (event != nullptr) {
+        switch (event->type()) {
+            case QEvent::Enter:
+            case QEvent::Leave:
+            case QEvent::MouseMove:
+            case QEvent::MouseButtonPress:
+            case QEvent::MouseButtonRelease:
+            case QEvent::Wheel:
+                updateControlsBarGeometry();
+                updateControlsBarVisibility();
+                break;
+            case QEvent::Show:
+            case QEvent::Hide:
+            case QEvent::Move:
+            case QEvent::Resize:
+            case QEvent::WindowActivate:
+            case QEvent::WindowDeactivate:
+                updateControlsBarGeometry();
+                updateControlsBarVisibility();
+                break;
+            default:
+                break;
+        }
+    }
+
+    return QMainWindow::eventFilter(watched, event);
+}
+
+void MainWindow::updateControlsBarVisibility() {
+    if (controlsBarWidget_ != nullptr) {
+        const QWidget* topLevelWidget = QApplication::topLevelAt(QCursor::pos());
+        const bool shouldBeVisible = isVisible() && (topLevelWidget == this);
+        controlsBarWidget_->setVisible(shouldBeVisible);
+        if (shouldBeVisible) {
+            controlsBarWidget_->raise();
+        }
+    }
+}
+
+void MainWindow::updateControlsBarGeometry() {
+    if (controlsBarWidget_ != nullptr && graphWidget_ != nullptr) {
+        constexpr int overlayMarginPx = 4;
+
+        const QRect graphRect = graphWidget_->geometry();
+        const int controlsBarHeight = controlsBarWidget_->sizeHint().height();
+        const QRect targetGeometry(
+            graphRect.left() + overlayMarginPx,
+            graphRect.y() + graphRect.height() - controlsBarHeight - overlayMarginPx,
+            std::max(0, graphRect.width() - (overlayMarginPx * 2)),
+            controlsBarHeight
+        );
+
+        if (controlsBarWidget_->geometry() != targetGeometry) {
+            controlsBarWidget_->setGeometry(targetGeometry);
+        }
+    }
 }
 
 void MainWindow::onStartStopClicked() {
