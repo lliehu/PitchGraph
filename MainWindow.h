@@ -6,7 +6,6 @@
 #include <QPushButton>
 #include <QtGlobal>
 #include <QVBoxLayout>
-#include <QLabel>
 #include <QCheckBox>
 #include <QSlider>
 #include <QToolButton>
@@ -53,7 +52,6 @@ private:
     QCheckBox* stayOnTopCheckBox_;
     QCheckBox* hideWindowFrameCheckBox_;
     QSlider* transparencySlider_;
-    QLabel* transparencyValueLabel_;
 
     AudioCapture* audioCapture_;
     PitchDetector* pitchDetector_;

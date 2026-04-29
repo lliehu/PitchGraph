@@ -147,23 +147,18 @@ void MainWindow::setupUi() {
     connect(hideWindowFrameCheckBox_, &QCheckBox::toggled, this, &MainWindow::onHideWindowFrameToggled);
     advancedControlsLayout->addWidget(hideWindowFrameCheckBox_);
 
-    // Opacity controls
-    QLabel* transparencyLabel = new QLabel("Opacity:", advancedControlsWidget_);
+    // Opacity control (value shown in tooltip)
     transparencySlider_ = new QSlider(Qt::Horizontal, advancedControlsWidget_);
     transparencySlider_->setRange(0, 80);
     transparencySlider_->setValue(0);
     transparencySlider_->setSingleStep(1);
     transparencySlider_->setPageStep(10);
     transparencySlider_->setFixedWidth(140);
-
-    transparencyValueLabel_ = new QLabel("0%", advancedControlsWidget_);
-    transparencyValueLabel_->setMinimumWidth(32);
+    transparencySlider_->setToolTip(QString("Opacity: %1%").arg(transparencySlider_->value()));
 
     connect(transparencySlider_, &QSlider::valueChanged, this, &MainWindow::onTransparencyChanged);
 
-    advancedControlsLayout->addWidget(transparencyLabel);
     advancedControlsLayout->addWidget(transparencySlider_);
-    advancedControlsLayout->addWidget(transparencyValueLabel_);
 
     advancedControlsWidget_->setVisible(false);
     controlsLayout->addWidget(advancedControlsWidget_);
@@ -444,7 +439,7 @@ void MainWindow::onHideWindowFrameToggled(bool enabled) {
 }
 
 void MainWindow::onTransparencyChanged(int value) {
-    transparencyValueLabel_->setText(QString("%1%").arg(value));
+    transparencySlider_->setToolTip(QString("Opacity: %1%").arg(value));
     const qreal opacity = 1.0 - (static_cast<qreal>(value) / 100.0);
     setWindowOpacity(opacity);
     saveSettings();
