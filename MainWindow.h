@@ -2,6 +2,7 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <QCloseEvent>
 #include <QPushButton>
 #include <QtGlobal>
 #include <QVBoxLayout>
@@ -22,6 +23,7 @@ public:
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
+    void closeEvent(QCloseEvent *event) override;
 
 private slots:
     void onStartStopClicked();
@@ -36,6 +38,8 @@ private:
     void setupUi();
     void updateControlsBarVisibility();
     void updateControlsBarGeometry();
+    void loadSettings();
+    void saveSettings() const;
 
     PitchGraphWidget* graphWidget_;
     QPushButton* startStopButton_;
@@ -52,6 +56,7 @@ private:
     PitchDetector* pitchDetector_;
 
     bool isCapturing_;
+    bool isLoadingSettings_;
     qint64 captureStartTimestampMs_;
     quint64 totalSamplesProcessed_;
 };

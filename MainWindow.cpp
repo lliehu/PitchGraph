@@ -6,11 +6,13 @@
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QMessageBox>
+#include <QSettings>
 #include <QToolButton>
 #include <algorithm>
 
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent), isCapturing_(false), captureStartTimestampMs_(0), totalSamplesProcessed_(0) {
+    : QMainWindow(parent), isCapturing_(false), isLoadingSettings_(false), captureStartTimestampMs_(0),
+      totalSamplesProcessed_(0) {
 
     setWindowTitle("PitchGraph - Real-time Pitch Detection");
     resize(900, 600);
@@ -26,12 +28,14 @@ MainWindow::MainWindow(QWidget *parent)
     connect(audioCapture_, &AudioCapture::error, this, &MainWindow::onAudioError);
 
     setupUi();
+    loadSettings();
     qApp->installEventFilter(this);
     updateControlsBarGeometry();
     updateControlsBarVisibility();
 }
 
 MainWindow::~MainWindow() {
+    saveSettings();
     qApp->removeEventFilter(this);
     if (isCapturing_) {
         audioCapture_->stop();
@@ -119,6 +123,7 @@ void MainWindow::setupUi() {
         advancedControlsToggleButton_->setArrowType(visible ? Qt::LeftArrow : Qt::RightArrow);
         advancedControlsToggleButton_->setToolTip(visible ? "Hide extra controls" : "Show extra controls");
         updateControlsBarGeometry();
+        saveSettings();
     });
 
     controlsLayout->addStretch(1);
@@ -166,6 +171,51 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
     }
 
     return QMainWindow::eventFilter(watched, event);
+}
+
+void MainWindow::closeEvent(QCloseEvent *event) {
+    saveSettings();
+    QMainWindow::closeEvent(event);
+}
+
+void MainWindow::loadSettings() {
+    isLoadingSettings_ = true;
+
+    QSettings settings("PitchGraph", "PitchGraph");
+    settings.beginGroup("MainWindow");
+
+    const bool extraControlsHidden = settings.value("extraControlsHidden", true).toBool();
+    const bool stayOnTop = settings.value("stayOnTop", false).toBool();
+    const bool hideWindowFrame = settings.value("hideWindowFrame", false).toBool();
+    const int opacityPercent = std::clamp(settings.value("opacityPercent", 0).toInt(), 0, 80);
+    const QByteArray geometry = settings.value("geometry").toByteArray();
+
+    advancedControlsToggleButton_->setChecked(!extraControlsHidden);
+    stayOnTopCheckBox_->setChecked(stayOnTop);
+    hideWindowFrameCheckBox_->setChecked(hideWindowFrame);
+    transparencySlider_->setValue(opacityPercent);
+
+    if (!geometry.isEmpty()) {
+        restoreGeometry(geometry);
+    }
+
+    settings.endGroup();
+    isLoadingSettings_ = false;
+}
+
+void MainWindow::saveSettings() const {
+    if (isLoadingSettings_) {
+        return;
+    }
+
+    QSettings settings("PitchGraph", "PitchGraph");
+    settings.beginGroup("MainWindow");
+    settings.setValue("geometry", saveGeometry());
+    settings.setValue("extraControlsHidden", !advancedControlsToggleButton_->isChecked());
+    settings.setValue("stayOnTop", stayOnTopCheckBox_->isChecked());
+    settings.setValue("hideWindowFrame", hideWindowFrameCheckBox_->isChecked());
+    settings.setValue("opacityPercent", transparencySlider_->value());
+    settings.endGroup();
 }
 
 void MainWindow::updateControlsBarVisibility() {
@@ -271,6 +321,7 @@ void MainWindow::onStayOnTopToggled(bool enabled) {
     if (wasVisible) {
         show();
     }
+    saveSettings();
 }
 
 void MainWindow::onHideWindowFrameToggled(bool enabled) {
@@ -279,10 +330,12 @@ void MainWindow::onHideWindowFrameToggled(bool enabled) {
     if (wasVisible) {
         show();
     }
+    saveSettings();
 }
 
 void MainWindow::onTransparencyChanged(int value) {
     transparencyValueLabel_->setText(QString("%1%").arg(value));
     const qreal opacity = 1.0 - (static_cast<qreal>(value) / 100.0);
     setWindowOpacity(opacity);
+    saveSettings();
 }
