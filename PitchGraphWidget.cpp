@@ -147,6 +147,10 @@ void PitchGraphWidget::paintEvent(QPaintEvent* event) {
 
 void PitchGraphWidget::contextMenuEvent(QContextMenuEvent* event) {
     QMenu contextMenu(this);
+    contextMenu.setStyleSheet(
+        "QMenu { background-color: #f5f5f5; color: #1f1f1f; }"
+        "QMenu::item:selected { background-color: #dce8ff; color: #111111; }"
+    );
     QAction* quitAction = contextMenu.addAction("Quit");
     QAction* selectedAction = contextMenu.exec(event->globalPos());
     if (selectedAction == quitAction) {
