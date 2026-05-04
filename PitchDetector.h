@@ -27,6 +27,7 @@ private:
     float lastPitchHz_;
     std::vector<float> pendingSamples_;
     std::deque<float> recentVoicedPitches_;
+    std::deque<float> recentVoicedConfidences_;
 };
 
 #endif // PITCHDETECTOR_H

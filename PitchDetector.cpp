@@ -3,9 +3,18 @@
 #include <cmath>
 #include <cstddef>
 #include <cstring>
+#include <limits>
 #include <numeric>
 
 namespace {
+constexpr float kMinValidPitchHz = 70.0f;
+constexpr float kMaxValidPitchHz = 500.0f;
+constexpr float kMinHopConfidence = 0.22f;
+constexpr float kMinOutputConfidence = 0.28f;
+constexpr float kSlewGuardHighJumpCents = 360.0f;
+constexpr float kSlewGuardMediumJumpCents = 260.0f;
+constexpr float kExtremeDeviationCents = 320.0f;
+
 float medianOf(std::vector<float> values) {
     if (values.empty()) {
         return 0.0f;
@@ -19,6 +28,31 @@ float medianOf(std::vector<float> values) {
     std::nth_element(values.begin(), values.begin() + static_cast<std::ptrdiff_t>(mid - 1), values.end());
     const float lower = values[mid - 1];
     return (lower + upper) * 0.5f;
+}
+
+float centsDistance(float a, float b) {
+    if (a <= 0.0f || b <= 0.0f) {
+        return std::numeric_limits<float>::infinity();
+    }
+    return std::abs(1200.0f * std::log2(a / b));
+}
+
+float weightedLogMeanHz(const std::vector<float>& pitches, const std::vector<float>& confidences) {
+    float weightedLogSum = 0.0f;
+    float weightSum = 0.0f;
+    for (size_t i = 0; i < pitches.size(); ++i) {
+        const float hz = pitches[i];
+        const float w = confidences[i];
+        if (hz <= 0.0f || w <= 0.0f) {
+            continue;
+        }
+        weightedLogSum += std::log2(hz) * w;
+        weightSum += w;
+    }
+    if (weightSum <= 0.0f) {
+        return 0.0f;
+    }
+    return std::exp2(weightedLogSum / weightSum);
 }
 }
 
@@ -61,6 +95,18 @@ float PitchDetector::detectPitch(const float* buffer, unsigned int size) {
     pitches.reserve(16);
     confidences.reserve(16);
 
+    float referencePitch = 0.0f;
+    float referenceConfidence = 0.0f;
+    if (!recentVoicedPitches_.empty()) {
+        std::vector<float> recentPitchCopy(recentVoicedPitches_.begin(), recentVoicedPitches_.end());
+        referencePitch = medianOf(recentPitchCopy);
+        std::vector<float> recentConfCopy(recentVoicedConfidences_.begin(), recentVoicedConfidences_.end());
+        referenceConfidence = medianOf(recentConfCopy);
+    } else if (lastPitchHz_ > 0.0f) {
+        referencePitch = lastPitchHz_;
+        referenceConfidence = confidence_;
+    }
+
     size_t consumedSamples = 0;
     while ((pendingSamples_.size() - consumedSamples) >= hopSize_) {
         std::memcpy(hopBuffer_->data, pendingSamples_.data() + consumedSamples, hopSize_ * sizeof(float));
@@ -71,22 +117,43 @@ float PitchDetector::detectPitch(const float* buffer, unsigned int size) {
         float hopConfidence = aubio_pitch_get_confidence(pitch_);
         float hopPitch = outputBuffer_->data[0];
 
-        if (hopConfidence < 0.20f || hopPitch < 70.0f || hopPitch > 500.0f) {
+        if (hopConfidence < kMinHopConfidence || hopPitch < kMinValidPitchHz || hopPitch > kMaxValidPitchHz) {
             continue;
         }
 
-        // Fix common octave jumps by snapping to the previous stable octave when ratio is near 2:1.
-        if (lastPitchHz_ > 0.0f) {
+        // Octave correction is only applied when either the current hop is weak or the recent track is stable.
+        if (referencePitch > 0.0f) {
+            float rawDistance = centsDistance(hopPitch, referencePitch);
+            float bestPitch = hopPitch;
+            float bestDistance = rawDistance;
             float half = hopPitch * 0.5f;
             float twice = hopPitch * 2.0f;
-            float directDelta = std::abs(hopPitch - lastPitchHz_);
-            float halfDelta = std::abs(half - lastPitchHz_);
-            float twiceDelta = std::abs(twice - lastPitchHz_);
-            const float ratio = hopPitch / std::max(lastPitchHz_, 1.0f);
-            if (half >= 70.0f && half <= 500.0f && ratio > 1.75f && ratio < 2.25f && halfDelta < directDelta * 0.80f) {
-                hopPitch = half;
-            } else if (twice >= 70.0f && twice <= 500.0f && ratio > 0.44f && ratio < 0.57f && twiceDelta < directDelta * 0.80f) {
-                hopPitch = twice;
+
+            if (half >= kMinValidPitchHz && half <= kMaxValidPitchHz) {
+                const float halfDistance = centsDistance(half, referencePitch);
+                if (halfDistance < bestDistance) {
+                    bestDistance = halfDistance;
+                    bestPitch = half;
+                }
+            }
+            if (twice >= kMinValidPitchHz && twice <= kMaxValidPitchHz) {
+                const float twiceDistance = centsDistance(twice, referencePitch);
+                if (twiceDistance < bestDistance) {
+                    bestDistance = twiceDistance;
+                    bestPitch = twice;
+                }
+            }
+
+            const bool stableReference = recentVoicedPitches_.size() >= 3 && referenceConfidence >= 0.50f;
+            const bool lowConfidenceHop = hopConfidence < 0.40f;
+            const bool meaningfulImprovement = (rawDistance - bestDistance) > 45.0f;
+            if (bestPitch != hopPitch && meaningfulImprovement && (stableReference || lowConfidenceHop)) {
+                hopPitch = bestPitch;
+            }
+
+            // Reject likely subharmonic artifacts once a stable baseline exists.
+            if (stableReference && hopPitch < (referencePitch * 0.62f) && hopConfidence < 0.75f) {
+                continue;
             }
         }
 
@@ -102,47 +169,62 @@ float PitchDetector::detectPitch(const float* buffer, unsigned int size) {
         return 0.0f;
     }
 
-    // Weighted average across hops in this callback.
+    // Weighted average across hops in this callback, in log space (pitch is multiplicative).
     float weightSum = std::accumulate(confidences.begin(), confidences.end(), 0.0f);
     if (weightSum <= 0.0f) {
         confidence_ = 0.0f;
         return 0.0f;
     }
 
-    float weightedPitchSum = 0.0f;
-    for (size_t i = 0; i < pitches.size(); ++i) {
-        weightedPitchSum += pitches[i] * confidences[i];
+    float estimateHz = weightedLogMeanHz(pitches, confidences);
+    if (estimateHz <= 0.0f) {
+        confidence_ = 0.0f;
+        return 0.0f;
     }
-    float estimateHz = weightedPitchSum / weightSum;
 
     confidence_ = weightSum / static_cast<float>(confidences.size());
 
     // Smooth short-term jitter without flattening accent movement.
     if (lastPitchHz_ > 0.0f) {
-        float alpha = 0.30f + 0.50f * std::min(1.0f, confidence_);
-        float relativeJump = std::abs(estimateHz - lastPitchHz_) / std::max(lastPitchHz_, 1.0f);
-        if (relativeJump > 0.35f && confidence_ < 0.60f) {
-            alpha *= 0.45f;
+        float alpha = 0.20f + 0.55f * std::min(1.0f, confidence_);
+        const float jumpCents = centsDistance(estimateHz, lastPitchHz_);
+        // Speech F0 cannot realistically jump by several semitones within one ~20 ms update.
+        // Clamp adaptation on extreme frame-to-frame leaps to suppress single-frame spikes.
+        if (jumpCents > kSlewGuardHighJumpCents) {
+            alpha = std::min(alpha, 0.10f);
+        } else if (jumpCents > kSlewGuardMediumJumpCents) {
+            alpha = std::min(alpha, 0.18f);
+        }
+        if (jumpCents > 220.0f && confidence_ < 0.70f) {
+            alpha *= 0.40f;
+        } else if (jumpCents > 120.0f) {
+            alpha *= 0.70f;
         }
         estimateHz = lastPitchHz_ + alpha * (estimateHz - lastPitchHz_);
-    }
-
-    recentVoicedPitches_.push_back(estimateHz);
-    if (recentVoicedPitches_.size() > 5) {
-        recentVoicedPitches_.pop_front();
     }
 
     std::vector<float> recentCopy(recentVoicedPitches_.begin(), recentVoicedPitches_.end());
     const float recentMedian = medianOf(recentCopy);
     if (recentMedian > 0.0f) {
-        const float deviation = std::abs(estimateHz - recentMedian) / recentMedian;
-        if (deviation > 0.18f && confidence_ < 0.80f) {
-            estimateHz = 0.70f * recentMedian + 0.30f * estimateHz;
+        const float deviationCents = centsDistance(estimateHz, recentMedian);
+        if (deviationCents > kExtremeDeviationCents) {
+            estimateHz = 0.85f * recentMedian + 0.15f * estimateHz;
+        } else if (deviationCents > 180.0f && confidence_ < 0.82f) {
+            const float pull = (deviationCents > 300.0f) ? 0.80f : 0.55f;
+            estimateHz = (pull * recentMedian) + ((1.0f - pull) * estimateHz);
         }
     }
 
-    if (confidence_ >= 0.22f) {
+    if (confidence_ >= kMinOutputConfidence) {
         lastPitchHz_ = estimateHz;
+        recentVoicedPitches_.push_back(estimateHz);
+        recentVoicedConfidences_.push_back(confidence_);
+        while (recentVoicedPitches_.size() > 5) {
+            recentVoicedPitches_.pop_front();
+        }
+        while (recentVoicedConfidences_.size() > 5) {
+            recentVoicedConfidences_.pop_front();
+        }
         return estimateHz;
     }
 
