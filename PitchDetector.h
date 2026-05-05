@@ -28,6 +28,8 @@ private:
     std::vector<float> pendingSamples_;
     std::deque<float> recentVoicedPitches_;
     std::deque<float> recentVoicedConfidences_;
+    std::deque<float> recentHopRms_;
+    int speechEnergyHangover_;
 };
 
 #endif // PITCHDETECTOR_H

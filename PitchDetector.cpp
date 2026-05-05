@@ -14,6 +14,12 @@ constexpr float kMinOutputConfidence = 0.28f;
 constexpr float kSlewGuardHighJumpCents = 360.0f;
 constexpr float kSlewGuardMediumJumpCents = 260.0f;
 constexpr float kExtremeDeviationCents = 320.0f;
+constexpr size_t kEnergyFloorWindowHops = 240;     // ~1.28s at 48k/256 hop.
+constexpr size_t kEnergyGateWarmupHops = 40;       // ~0.21s warm-up.
+constexpr float kEnergyFloorQuantile = 0.20f;      // Robust floor estimate.
+constexpr float kEnergyFloorMultiplier = 1.50f;
+constexpr float kEnergyFloorOffset = 0.015f;
+constexpr int kSpeechEnergyHangoverHops = 10;      // ~53ms to avoid choppy gating.
 
 float medianOf(std::vector<float> values) {
     if (values.empty()) {
@@ -54,6 +60,28 @@ float weightedLogMeanHz(const std::vector<float>& pitches, const std::vector<flo
     }
     return std::exp2(weightedLogSum / weightSum);
 }
+
+float computeRms(const float* data, size_t count) {
+    if (data == nullptr || count == 0) {
+        return 0.0f;
+    }
+    float sumSquares = 0.0f;
+    for (size_t i = 0; i < count; ++i) {
+        sumSquares += data[i] * data[i];
+    }
+    return std::sqrt(sumSquares / static_cast<float>(count));
+}
+
+float quantileOf(const std::deque<float>& values, float quantile) {
+    if (values.empty()) {
+        return 0.0f;
+    }
+    std::vector<float> copy(values.begin(), values.end());
+    const float q = std::clamp(quantile, 0.0f, 1.0f);
+    const size_t idx = static_cast<size_t>(q * static_cast<float>(copy.size() - 1));
+    std::nth_element(copy.begin(), copy.begin() + static_cast<std::ptrdiff_t>(idx), copy.end());
+    return copy[idx];
+}
 }
 
 PitchDetector::PitchDetector(unsigned int sampleRate, unsigned int windowSize, unsigned int hopSize)
@@ -61,7 +89,8 @@ PitchDetector::PitchDetector(unsigned int sampleRate, unsigned int windowSize, u
       windowSize_(windowSize),
       hopSize_(hopSize),
       confidence_(0.0f),
-      lastPitchHz_(0.0f) {
+      lastPitchHz_(0.0f),
+      speechEnergyHangover_(0) {
 
     // Monophonic speech pitch tracking with tight frame hop for intonation contour.
     pitch_ = new_aubio_pitch("yin", windowSize_, hopSize_, sampleRate_);
@@ -74,6 +103,7 @@ PitchDetector::PitchDetector(unsigned int sampleRate, unsigned int windowSize, u
     hopBuffer_ = new_fvec(hopSize_);
     outputBuffer_ = new_fvec(1);
     pendingSamples_.reserve(windowSize_ * 2);
+    recentHopRms_.clear();
 }
 
 PitchDetector::~PitchDetector() {
@@ -116,8 +146,32 @@ float PitchDetector::detectPitch(const float* buffer, unsigned int size) {
 
         float hopConfidence = aubio_pitch_get_confidence(pitch_);
         float hopPitch = outputBuffer_->data[0];
+        const float hopRms = computeRms(hopBuffer_->data, hopSize_);
+
+        recentHopRms_.push_back(hopRms);
+        while (recentHopRms_.size() > kEnergyFloorWindowHops) {
+            recentHopRms_.pop_front();
+        }
+
+        bool speechLikelyByEnergy = true;
+        if (recentHopRms_.size() >= kEnergyGateWarmupHops) {
+            const float energyFloor = quantileOf(recentHopRms_, kEnergyFloorQuantile);
+            const float energyThreshold = (energyFloor * kEnergyFloorMultiplier) + kEnergyFloorOffset;
+            if (hopRms > energyThreshold) {
+                speechEnergyHangover_ = kSpeechEnergyHangoverHops;
+            } else if (speechEnergyHangover_ > 0) {
+                --speechEnergyHangover_;
+            }
+            speechLikelyByEnergy = (hopRms > energyThreshold) || (speechEnergyHangover_ > 0);
+        }
 
         if (hopConfidence < kMinHopConfidence || hopPitch < kMinValidPitchHz || hopPitch > kMaxValidPitchHz) {
+            continue;
+        }
+
+        // Prefer speech-driven pitch: background music usually keeps RMS near a stationary floor,
+        // while speech introduces clear short-term energy bursts above that floor.
+        if (!speechLikelyByEnergy && hopConfidence < 0.90f) {
             continue;
         }
 
