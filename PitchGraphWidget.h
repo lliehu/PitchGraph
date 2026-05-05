@@ -17,6 +17,7 @@ public:
 
     void addPitchPoint(float frequency, float confidence, qint64 timestampMs = -1);
     void addAudioSamples(const float* data, unsigned int size);
+    void setFrozen(bool frozen, qint64 freezeTimestampMs = -1);
     void clear();
     bool exportToTextFile(const QString& filePath, QString* errorMessage = nullptr) const;
 
@@ -49,9 +50,11 @@ private:
     int retentionSeconds_;
     float minFreq_;
     float maxFreq_;
+    bool isFrozen_;
+    qint64 frozenTimestampMs_;
 
-    void removeOldData();
-    void removeOldWaveformData();
+    void removeOldData(qint64 nowMs);
+    void removeOldWaveformData(qint64 nowMs);
     void drawGrid(QPainter& painter);
     void drawWaveform(QPainter& painter);
     void drawPitchCurve(QPainter& painter);

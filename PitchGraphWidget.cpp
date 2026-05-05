@@ -10,7 +10,8 @@
 #include <cmath>
 
 PitchGraphWidget::PitchGraphWidget(QWidget* parent)
-    : QWidget(parent), timeWindowSeconds_(10), retentionSeconds_(120), minFreq_(50.0f), maxFreq_(1000.0f) {
+    : QWidget(parent), timeWindowSeconds_(10), retentionSeconds_(120), minFreq_(50.0f), maxFreq_(1000.0f),
+      isFrozen_(false), frozenTimestampMs_(0) {
 
     setMinimumSize(400, 300);
     setStyleSheet("background-color: white;");
@@ -34,7 +35,7 @@ void PitchGraphWidget::addPitchPoint(float frequency, float confidence, qint64 t
             pitchData_.pop_front();
         }
 
-        removeOldData();
+        removeOldData(QDateTime::currentMSecsSinceEpoch());
     }
 }
 
@@ -56,7 +57,19 @@ void PitchGraphWidget::addAudioSamples(const float* data, unsigned int size) {
         waveformData_.pop_front();
     }
 
-    removeOldWaveformData();
+    removeOldWaveformData(QDateTime::currentMSecsSinceEpoch());
+}
+
+void PitchGraphWidget::setFrozen(bool frozen, qint64 freezeTimestampMs) {
+    isFrozen_ = frozen;
+    if (isFrozen_) {
+        frozenTimestampMs_ = (freezeTimestampMs >= 0) ? freezeTimestampMs : QDateTime::currentMSecsSinceEpoch();
+        updateTimer_->stop();
+    } else if (!updateTimer_->isActive()) {
+        updateTimer_->start(33);
+    }
+
+    update();
 }
 
 void PitchGraphWidget::clear() {
@@ -116,18 +129,16 @@ bool PitchGraphWidget::exportToTextFile(const QString& filePath, QString* errorM
     return true;
 }
 
-void PitchGraphWidget::removeOldData() {
-    qint64 now = QDateTime::currentMSecsSinceEpoch();
-    qint64 cutoff = now - (retentionSeconds_ * 1000);
+void PitchGraphWidget::removeOldData(qint64 nowMs) {
+    qint64 cutoff = nowMs - (retentionSeconds_ * 1000);
 
     while (!pitchData_.empty() && pitchData_.front().timestamp < cutoff) {
         pitchData_.pop_front();
     }
 }
 
-void PitchGraphWidget::removeOldWaveformData() {
-    qint64 now = QDateTime::currentMSecsSinceEpoch();
-    qint64 cutoff = now - (retentionSeconds_ * 1000);
+void PitchGraphWidget::removeOldWaveformData(qint64 nowMs) {
+    qint64 cutoff = nowMs - (retentionSeconds_ * 1000);
 
     while (!waveformData_.empty() && waveformData_.front().timestamp < cutoff) {
         waveformData_.pop_front();
@@ -203,19 +214,21 @@ void PitchGraphWidget::drawWaveform(QPainter& painter) {
         return;
     }
 
-    removeOldWaveformData();
+    const qint64 renderNow = isFrozen_ ? frozenTimestampMs_ : QDateTime::currentMSecsSinceEpoch();
+    if (!isFrozen_) {
+        removeOldWaveformData(renderNow);
+    }
 
     int w = width();
     int h = height();
     int centerY = h / 2;
-    qint64 now = QDateTime::currentMSecsSinceEpoch();
     qint64 timeWindow = timeWindowSeconds_ * 1000;
 
     // Draw waveform in light gray behind the pitch curve
     painter.setPen(QPen(QColor(200, 200, 200), 1));
 
     for (const auto& waveform : waveformData_) {
-        qint64 age = now - waveform.timestamp;
+        qint64 age = renderNow - waveform.timestamp;
         float timeRatio = 1.0f - (static_cast<float>(age) / timeWindow);
 
         if (timeRatio < 0.0f || timeRatio > 1.0f) {
@@ -260,11 +273,13 @@ void PitchGraphWidget::drawPitchCurve(QPainter& painter) {
         return;
     }
 
-    removeOldData();
+    const qint64 renderNow = isFrozen_ ? frozenTimestampMs_ : QDateTime::currentMSecsSinceEpoch();
+    if (!isFrozen_) {
+        removeOldData(renderNow);
+    }
 
     int w = width();
     int h = height();
-    qint64 now = QDateTime::currentMSecsSinceEpoch();
     qint64 timeWindow = timeWindowSeconds_ * 1000;
 
     Qt::GlobalColor pitchColor = Qt::darkGreen;
@@ -275,7 +290,7 @@ void PitchGraphWidget::drawPitchCurve(QPainter& painter) {
 
     for (const auto& point : pitchData_) {
         // Calculate x position (time-based, scrolling from right to left)
-        qint64 age = now - point.timestamp;
+        qint64 age = renderNow - point.timestamp;
         float timeRatio = 1.0f - (static_cast<float>(age) / timeWindow);
         int x = static_cast<int>(timeRatio * w);
 

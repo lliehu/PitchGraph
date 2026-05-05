@@ -365,19 +365,25 @@ void MainWindow::onStartStopClicked() {
             captureStartTimestampMs_ = QDateTime::currentMSecsSinceEpoch();
             totalSamplesProcessed_ = 0;
             startStopButton_->setText("■");
+            graphWidget_->setFrozen(false);
             graphWidget_->clear();
         } else {
             QMessageBox::critical(this, "Error", "Failed to start audio capture. Check your system audio device.");
         }
     } else {
         // Stop capturing
-        audioCapture_->stop();
         isCapturing_ = false;
+        audioCapture_->stop();
         startStopButton_->setText("▶");
+        graphWidget_->setFrozen(true, QDateTime::currentMSecsSinceEpoch());
     }
 }
 
 void MainWindow::onAudioDataReady(const QVector<float>& data) {
+    if (!isCapturing_) {
+        return;
+    }
+
     constexpr unsigned int sampleRate = 48000;
 
     // Add raw audio samples to waveform visualization
