@@ -19,7 +19,11 @@ constexpr size_t kEnergyGateWarmupHops = 40;       // ~0.21s warm-up.
 constexpr float kEnergyFloorQuantile = 0.20f;      // Robust floor estimate.
 constexpr float kEnergyFloorMultiplier = 1.50f;
 constexpr float kEnergyFloorOffset = 0.015f;
-constexpr int kSpeechEnergyHangoverHops = 10;      // ~53ms to avoid choppy gating.
+constexpr int kSpeechEnergyHangoverHops = 16;      // ~85ms to avoid choppy gating.
+constexpr float kEnergyGateStrongConfidence = 0.82f;
+constexpr float kEnergyGateContinuityMinReferenceConfidence = 0.45f;
+constexpr float kEnergyGateContinuityMinHopConfidence = 0.34f;
+constexpr float kEnergyGateContinuityMaxDeviationCents = 170.0f;
 
 float medianOf(std::vector<float> values) {
     if (values.empty()) {
@@ -171,7 +175,27 @@ float PitchDetector::detectPitch(const float* buffer, unsigned int size) {
 
         // Prefer speech-driven pitch: background music usually keeps RMS near a stationary floor,
         // while speech introduces clear short-term energy bursts above that floor.
-        if (!speechLikelyByEnergy && hopConfidence < 0.90f) {
+        bool nearReferencePitch = false;
+        if (referencePitch > 0.0f) {
+            float bestDistance = centsDistance(hopPitch, referencePitch);
+            const float half = hopPitch * 0.5f;
+            const float twice = hopPitch * 2.0f;
+
+            if (half >= kMinValidPitchHz && half <= kMaxValidPitchHz) {
+                bestDistance = std::min(bestDistance, centsDistance(half, referencePitch));
+            }
+            if (twice >= kMinValidPitchHz && twice <= kMaxValidPitchHz) {
+                bestDistance = std::min(bestDistance, centsDistance(twice, referencePitch));
+            }
+            nearReferencePitch = bestDistance <= kEnergyGateContinuityMaxDeviationCents;
+        }
+
+        const bool continuityLikely =
+            nearReferencePitch &&
+            referenceConfidence >= kEnergyGateContinuityMinReferenceConfidence &&
+            hopConfidence >= kEnergyGateContinuityMinHopConfidence;
+        const bool strongConfidenceHop = hopConfidence >= kEnergyGateStrongConfidence;
+        if (!speechLikelyByEnergy && !continuityLikely && !strongConfidenceHop) {
             continue;
         }
 
