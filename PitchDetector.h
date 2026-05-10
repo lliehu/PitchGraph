@@ -15,6 +15,9 @@ public:
     float detectPitch(const float* buffer, unsigned int size);
 
     float getConfidence() const { return confidence_; }
+    unsigned int sampleRate() const { return sampleRate_; }
+    unsigned int windowSize() const { return windowSize_; }
+    unsigned int hopSize() const { return hopSize_; }
 
 private:
     aubio_pitch_t* pitch_;

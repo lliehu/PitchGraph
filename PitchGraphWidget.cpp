@@ -4,10 +4,23 @@
 #include <QContextMenuEvent>
 #include <QDateTime>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonValue>
 #include <QMenu>
 #include <QPen>
-#include <QTextStream>
+#include <algorithm>
 #include <cmath>
+
+namespace {
+QJsonValue toJsonNumberOrNull(float value) {
+    if (!std::isfinite(value)) {
+        return QJsonValue(QJsonValue::Null);
+    }
+    return QJsonValue(static_cast<double>(value));
+}
+}
 
 PitchGraphWidget::PitchGraphWidget(QWidget* parent)
     : QWidget(parent), timeWindowSeconds_(10), retentionSeconds_(120), minFreq_(50.0f), maxFreq_(1000.0f),
@@ -39,9 +52,26 @@ void PitchGraphWidget::addPitchPoint(float frequency, float confidence, qint64 t
     }
 }
 
-void PitchGraphWidget::addAudioSamples(const float* data, unsigned int size) {
+void PitchGraphWidget::addAudioSamples(
+    const float* data,
+    unsigned int size,
+    qint64 startTimestampMs,
+    unsigned int sampleRateHz,
+    quint64 startSampleIndex
+) {
+    if (data == nullptr || size == 0) {
+        return;
+    }
+
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    const qint64 chunkStartTimestamp = (startTimestampMs >= 0) ? startTimestampMs : nowMs;
+    const qint64 chunkCenterTimestamp =
+        (sampleRateHz > 0)
+            ? (chunkStartTimestamp + static_cast<qint64>(((size / 2.0) * 1000.0) / sampleRateHz))
+            : chunkStartTimestamp;
+
     WaveformData waveform;
-    waveform.timestamp = QDateTime::currentMSecsSinceEpoch();
+    waveform.timestamp = chunkCenterTimestamp;
 
     // Downsample the audio data for visualization (take every Nth sample)
     unsigned int downsampleFactor = 16; // Increased from 4 to reduce memory usage
@@ -57,7 +87,45 @@ void PitchGraphWidget::addAudioSamples(const float* data, unsigned int size) {
         waveformData_.pop_front();
     }
 
-    removeOldWaveformData(QDateTime::currentMSecsSinceEpoch());
+    RawAudioChunk rawChunk;
+    rawChunk.startTimestamp = chunkStartTimestamp;
+    rawChunk.centerTimestamp = chunkCenterTimestamp;
+    rawChunk.startSampleIndex = startSampleIndex;
+    rawChunk.sampleCount = size;
+    rawChunk.samples.assign(data, data + size);
+    rawAudioChunks_.push_back(std::move(rawChunk));
+
+    if (rawAudioChunks_.size() > 6000) {
+        rawAudioChunks_.pop_front();
+    }
+
+    removeOldWaveformData(nowMs);
+    removeOldRawAudioChunks(nowMs);
+}
+
+void PitchGraphWidget::addAnalysisFrame(
+    qint64 timestampMs,
+    float frequencyHz,
+    float confidence,
+    float rms,
+    unsigned int sampleCount,
+    quint64 centerSampleIndex
+) {
+    AnalysisFrame frame;
+    frame.timestamp = (timestampMs >= 0) ? timestampMs : QDateTime::currentMSecsSinceEpoch();
+    frame.frequencyHz = frequencyHz;
+    frame.confidence = std::clamp(confidence, 0.0f, 1.0f);
+    frame.rms = std::max(0.0f, rms);
+    frame.sampleCount = sampleCount;
+    frame.centerSampleIndex = centerSampleIndex;
+    frame.voiced = frequencyHz > 0.0f;
+    analysisFrames_.push_back(frame);
+
+    if (analysisFrames_.size() > 7000) {
+        analysisFrames_.pop_front();
+    }
+
+    removeOldAnalysisFrames(QDateTime::currentMSecsSinceEpoch());
 }
 
 void PitchGraphWidget::setFrozen(bool frozen, qint64 freezeTimestampMs) {
@@ -75,10 +143,16 @@ void PitchGraphWidget::setFrozen(bool frozen, qint64 freezeTimestampMs) {
 void PitchGraphWidget::clear() {
     pitchData_.clear();
     waveformData_.clear();
+    analysisFrames_.clear();
+    rawAudioChunks_.clear();
     update();
 }
 
-bool PitchGraphWidget::exportToTextFile(const QString& filePath, QString* errorMessage) const {
+bool PitchGraphWidget::exportToJsonFile(
+    const QString& filePath,
+    const QJsonObject& sessionMetadata,
+    QString* errorMessage
+) const {
     QFile file(filePath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         if (errorMessage != nullptr) {
@@ -87,41 +161,81 @@ bool PitchGraphWidget::exportToTextFile(const QString& filePath, QString* errorM
         return false;
     }
 
-    QTextStream out(&file);
-    out << "PitchGraph Export\n";
-    out << "GeneratedAt=" << QDateTime::currentDateTime().toString(Qt::ISODateWithMs) << "\n";
-    out << "TimeWindowSeconds=" << timeWindowSeconds_ << "\n";
-    out << "FrequencyRangeHz=" << minFreq_ << "," << maxFreq_ << "\n";
-    out << "PitchPointsCount=" << pitchData_.size() << "\n";
-    out << "WaveformChunksCount=" << waveformData_.size() << "\n\n";
+    QJsonObject root;
+    root.insert("schema", QStringLiteral("pitchgraph.export.v2"));
+    root.insert("generated_at_iso", QDateTime::currentDateTime().toString(Qt::ISODateWithMs));
+    root.insert("session", sessionMetadata);
 
-    out << "[PitchPoints]\n";
-    out << "TimestampMs,TimestampIso,FrequencyHz,Confidence\n";
+    QJsonObject display;
+    display.insert("time_window_seconds", timeWindowSeconds_);
+    display.insert("retention_seconds", retentionSeconds_);
+    display.insert("frequency_range_hz", QJsonArray{minFreq_, maxFreq_});
+    root.insert("display", display);
+
+    QJsonArray pitchTimeline;
     for (const auto& point : pitchData_) {
-        out << point.timestamp << ","
-            << QDateTime::fromMSecsSinceEpoch(point.timestamp).toString(Qt::ISODateWithMs) << ","
-            << point.frequency << ","
-            << point.confidence << "\n";
+        QJsonObject pitchPoint;
+        pitchPoint.insert("timestamp_ms", static_cast<double>(point.timestamp));
+        pitchPoint.insert("timestamp_iso", QDateTime::fromMSecsSinceEpoch(point.timestamp).toString(Qt::ISODateWithMs));
+        pitchPoint.insert("frequency_hz", toJsonNumberOrNull(point.frequency));
+        pitchPoint.insert("confidence", toJsonNumberOrNull(point.confidence));
+        pitchTimeline.append(pitchPoint);
     }
+    root.insert("pitch_points_voiced_only", pitchTimeline);
 
-    out << "\n[WaveformChunks]\n";
-    out << "TimestampMs,TimestampIso,Samples\n";
-    for (const auto& chunk : waveformData_) {
-        out << chunk.timestamp << ","
-            << QDateTime::fromMSecsSinceEpoch(chunk.timestamp).toString(Qt::ISODateWithMs) << ",";
+    QJsonArray frames;
+    for (const auto& frame : analysisFrames_) {
+        QJsonObject frameJson;
+        frameJson.insert("timestamp_ms", static_cast<double>(frame.timestamp));
+        frameJson.insert("timestamp_iso", QDateTime::fromMSecsSinceEpoch(frame.timestamp).toString(Qt::ISODateWithMs));
+        frameJson.insert("sample_count", static_cast<int>(frame.sampleCount));
+        frameJson.insert("center_sample_index", static_cast<double>(frame.centerSampleIndex));
+        frameJson.insert("rms", toJsonNumberOrNull(frame.rms));
+        frameJson.insert("confidence", toJsonNumberOrNull(frame.confidence));
+        frameJson.insert("voiced", frame.voiced);
+        frameJson.insert(
+            "pitch_hz",
+            frame.voiced ? toJsonNumberOrNull(frame.frequencyHz) : QJsonValue(QJsonValue::Null)
+        );
+        frames.append(frameJson);
+    }
+    root.insert("frames", frames);
 
-        for (size_t i = 0; i < chunk.samples.size(); ++i) {
-            if (i > 0) {
-                out << ";";
-            }
-            out << chunk.samples[i];
+    QJsonObject rawAudio;
+    rawAudio.insert("encoding", QStringLiteral("pcm_f32le"));
+    rawAudio.insert("channels", 1);
+
+    QJsonArray chunks;
+    for (const auto& chunk : rawAudioChunks_) {
+        QJsonObject chunkJson;
+        chunkJson.insert("start_timestamp_ms", static_cast<double>(chunk.startTimestamp));
+        chunkJson.insert(
+            "start_timestamp_iso",
+            QDateTime::fromMSecsSinceEpoch(chunk.startTimestamp).toString(Qt::ISODateWithMs)
+        );
+        chunkJson.insert("center_timestamp_ms", static_cast<double>(chunk.centerTimestamp));
+        chunkJson.insert(
+            "center_timestamp_iso",
+            QDateTime::fromMSecsSinceEpoch(chunk.centerTimestamp).toString(Qt::ISODateWithMs)
+        );
+        chunkJson.insert("start_sample_index", static_cast<double>(chunk.startSampleIndex));
+        chunkJson.insert("sample_count", static_cast<int>(chunk.sampleCount));
+
+        QJsonArray sampleArray;
+        for (const float sample : chunk.samples) {
+            sampleArray.append(toJsonNumberOrNull(sample));
         }
-        out << "\n";
+        chunkJson.insert("samples", sampleArray);
+        chunks.append(chunkJson);
     }
+    rawAudio.insert("chunks", chunks);
+    root.insert("raw_audio", rawAudio);
 
-    if (out.status() != QTextStream::Ok) {
+    const QJsonDocument document(root);
+    const qint64 bytesWritten = file.write(document.toJson(QJsonDocument::Indented));
+    if (bytesWritten < 0) {
         if (errorMessage != nullptr) {
-            *errorMessage = QStringLiteral("Failed while writing data.");
+            *errorMessage = file.errorString();
         }
         return false;
     }
@@ -142,6 +256,22 @@ void PitchGraphWidget::removeOldWaveformData(qint64 nowMs) {
 
     while (!waveformData_.empty() && waveformData_.front().timestamp < cutoff) {
         waveformData_.pop_front();
+    }
+}
+
+void PitchGraphWidget::removeOldAnalysisFrames(qint64 nowMs) {
+    const qint64 cutoff = nowMs - (retentionSeconds_ * 1000);
+
+    while (!analysisFrames_.empty() && analysisFrames_.front().timestamp < cutoff) {
+        analysisFrames_.pop_front();
+    }
+}
+
+void PitchGraphWidget::removeOldRawAudioChunks(qint64 nowMs) {
+    const qint64 cutoff = nowMs - (retentionSeconds_ * 1000);
+
+    while (!rawAudioChunks_.empty() && rawAudioChunks_.front().centerTimestamp < cutoff) {
+        rawAudioChunks_.pop_front();
     }
 }
 

@@ -1,21 +1,51 @@
 #include "MainWindow.h"
 #include <QApplication>
+#include <QCoreApplication>
 #include <QCursor>
 #include <QDateTime>
 #include <QDir>
 #include <QEvent>
 #include <QHBoxLayout>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QSettings>
 #include <QShortcut>
+#include <QSysInfo>
 #include <QToolButton>
 #include <QWindow>
 #include <algorithm>
+#include <cmath>
+
+namespace {
+constexpr unsigned int kCaptureSampleRateHz = 48000;
+constexpr unsigned int kDetectorWindowSize = 2048;
+constexpr unsigned int kDetectorHopSize = 256;
+constexpr float kDetectorSilenceDb = -45.0f;
+constexpr float kDetectorTolerance = 0.8f;
+constexpr float kMinValidPitchHz = 70.0f;
+constexpr float kMaxValidPitchHz = 500.0f;
+constexpr float kMinHopConfidence = 0.22f;
+constexpr float kMinOutputConfidence = 0.28f;
+
+float computeRms(const QVector<float>& data) {
+    if (data.isEmpty()) {
+        return 0.0f;
+    }
+
+    double sumSquares = 0.0;
+    for (const float sample : data) {
+        sumSquares += static_cast<double>(sample) * static_cast<double>(sample);
+    }
+
+    return static_cast<float>(std::sqrt(sumSquares / static_cast<double>(data.size())));
+}
+}
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), isCapturing_(false), isLoadingSettings_(false), isWindowDragActive_(false),
-      captureStartTimestampMs_(0), totalSamplesProcessed_(0) {
+      captureStartTimestampMs_(0), captureStopTimestampMs_(0), totalSamplesProcessed_(0) {
 
     setWindowTitle("PitchGraph - Real-time Pitch Detection");
     resize(900, 600);
@@ -24,7 +54,7 @@ MainWindow::MainWindow(QWidget *parent)
     // Using 48000 Hz sample rate for better pitch detection accuracy
     // 2048/256 analysis is tuned for speech intonation tracking (pitch accent contour)
     audioCapture_ = new AudioCapture(this);
-    pitchDetector_ = new PitchDetector(48000, 2048, 256);
+    pitchDetector_ = new PitchDetector(kCaptureSampleRateHz, kDetectorWindowSize, kDetectorHopSize);
 
     // Connect signals
     connect(audioCapture_, &AudioCapture::audioDataReady, this, &MainWindow::onAudioDataReady, Qt::QueuedConnection);
@@ -360,9 +390,10 @@ void MainWindow::updateControlsBarGeometry() {
 void MainWindow::onStartStopClicked() {
     if (!isCapturing_) {
         // Start capturing
-        if (audioCapture_->start(48000)) {
+        if (audioCapture_->start(kCaptureSampleRateHz)) {
             isCapturing_ = true;
             captureStartTimestampMs_ = QDateTime::currentMSecsSinceEpoch();
+            captureStopTimestampMs_ = 0;
             totalSamplesProcessed_ = 0;
             startStopButton_->setText("■");
             graphWidget_->setFrozen(false);
@@ -374,8 +405,9 @@ void MainWindow::onStartStopClicked() {
         // Stop capturing
         isCapturing_ = false;
         audioCapture_->stop();
+        captureStopTimestampMs_ = QDateTime::currentMSecsSinceEpoch();
         startStopButton_->setText("▶");
-        graphWidget_->setFrozen(true, QDateTime::currentMSecsSinceEpoch());
+        graphWidget_->setFrozen(true, captureStopTimestampMs_);
     }
 }
 
@@ -384,20 +416,31 @@ void MainWindow::onAudioDataReady(const QVector<float>& data) {
         return;
     }
 
-    constexpr unsigned int sampleRate = 48000;
+    const unsigned int chunkSize = static_cast<unsigned int>(data.size());
+    if (chunkSize == 0) {
+        return;
+    }
 
-    // Add raw audio samples to waveform visualization
-    graphWidget_->addAudioSamples(data.constData(), static_cast<unsigned int>(data.size()));
-
-    // Detect pitch from audio data
-    float pitch = pitchDetector_->detectPitch(data.constData(), static_cast<unsigned int>(data.size()));
-    float confidence = pitchDetector_->getConfidence();
-
-    // Timestamp from sample clock to avoid UI-event jitter collapsing contour timing.
+    const quint64 chunkStartSampleIndex = totalSamplesProcessed_;
+    const qint64 chunkStartTs =
+        captureStartTimestampMs_ +
+        static_cast<qint64>((static_cast<double>(chunkStartSampleIndex) * 1000.0) / kCaptureSampleRateHz);
     const qint64 chunkCenterTs =
         captureStartTimestampMs_ +
-        static_cast<qint64>(((totalSamplesProcessed_ + (data.size() / 2.0)) * 1000.0) / sampleRate);
-    totalSamplesProcessed_ += static_cast<quint64>(data.size());
+        static_cast<qint64>(((chunkStartSampleIndex + (chunkSize / 2.0)) * 1000.0) / kCaptureSampleRateHz);
+    const quint64 chunkCenterSampleIndex = chunkStartSampleIndex + (chunkSize / 2);
+    totalSamplesProcessed_ += static_cast<quint64>(chunkSize);
+
+    // Add raw audio samples to waveform visualization and export buffer.
+    graphWidget_->addAudioSamples(data.constData(), chunkSize, chunkStartTs, kCaptureSampleRateHz, chunkStartSampleIndex);
+
+    // Detect pitch from audio data
+    const float pitch = pitchDetector_->detectPitch(data.constData(), chunkSize);
+    const float confidence = pitchDetector_->getConfidence();
+    const float rms = computeRms(data);
+
+    // Record every analysis frame, including unvoiced frames.
+    graphWidget_->addAnalysisFrame(chunkCenterTs, pitch, confidence, rms, chunkSize, chunkCenterSampleIndex);
 
     // Update graph with detected pitch
     if (pitch > 0.0f) {
@@ -407,20 +450,66 @@ void MainWindow::onAudioDataReady(const QVector<float>& data) {
 
 void MainWindow::onExportClicked() {
     const QString fileName =
-        QString("pitch_graph_export_%1.txt").arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss"));
+        QString("pitch_graph_export_%1.json").arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss"));
     const QString filePath = QDir::current().filePath(fileName);
 
+    const qint64 sessionEndTimestampMs =
+        isCapturing_ ? QDateTime::currentMSecsSinceEpoch() : captureStopTimestampMs_;
+
+    QJsonObject detector;
+    detector.insert("library", QStringLiteral("aubio"));
+    detector.insert("algorithm", QStringLiteral("yin"));
+    detector.insert("sample_rate_hz", static_cast<int>(pitchDetector_->sampleRate()));
+    detector.insert("window_size_samples", static_cast<int>(pitchDetector_->windowSize()));
+    detector.insert("hop_size_samples", static_cast<int>(pitchDetector_->hopSize()));
+    detector.insert("silence_threshold_db", kDetectorSilenceDb);
+    detector.insert("tolerance", kDetectorTolerance);
+    detector.insert("valid_pitch_range_hz", QJsonArray{kMinValidPitchHz, kMaxValidPitchHz});
+    detector.insert("min_hop_confidence", kMinHopConfidence);
+    detector.insert("min_output_confidence", kMinOutputConfidence);
+
+    QJsonObject capture;
+    capture.insert("backend", audioCapture_->backendName());
+    capture.insert("sample_rate_hz", static_cast<int>(kCaptureSampleRateHz));
+    capture.insert("channels", 1);
+    capture.insert("start_timestamp_ms", static_cast<double>(captureStartTimestampMs_));
+    capture.insert(
+        "start_timestamp_iso",
+        (captureStartTimestampMs_ > 0)
+            ? QDateTime::fromMSecsSinceEpoch(captureStartTimestampMs_).toString(Qt::ISODateWithMs)
+            : QString()
+    );
+    capture.insert("end_timestamp_ms", static_cast<double>(sessionEndTimestampMs));
+    capture.insert(
+        "end_timestamp_iso",
+        (sessionEndTimestampMs > 0)
+            ? QDateTime::fromMSecsSinceEpoch(sessionEndTimestampMs).toString(Qt::ISODateWithMs)
+            : QString()
+    );
+    capture.insert("total_samples_processed", static_cast<double>(totalSamplesProcessed_));
+
+    QJsonObject application;
+    application.insert("name", QCoreApplication::applicationName());
+    application.insert("version", QCoreApplication::applicationVersion());
+    application.insert("qt_version", QString::fromLatin1(qVersion()));
+    application.insert("build_arch", QSysInfo::buildAbi());
+
+    QJsonObject sessionMetadata;
+    sessionMetadata.insert("application", application);
+    sessionMetadata.insert("capture", capture);
+    sessionMetadata.insert("detector", detector);
+
     QString errorMessage;
-    if (!graphWidget_->exportToTextFile(filePath, &errorMessage)) {
+    if (!graphWidget_->exportToJsonFile(filePath, sessionMetadata, &errorMessage)) {
         QMessageBox::critical(
             this,
             "Export Failed",
-            QString("Could not export pitch graph to:\n%1\n\nReason: %2").arg(filePath, errorMessage)
+            QString("Could not export analysis data to:\n%1\n\nReason: %2").arg(filePath, errorMessage)
         );
         return;
     }
 
-    QMessageBox::information(this, "Export Complete", QString("Pitch graph exported to:\n%1").arg(filePath));
+    QMessageBox::information(this, "Export Complete", QString("Analysis export written to:\n%1").arg(filePath));
 }
 
 void MainWindow::onAudioError(const QString& message) {

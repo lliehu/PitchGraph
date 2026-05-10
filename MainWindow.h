@@ -60,6 +60,7 @@ private:
     bool isLoadingSettings_;
     bool isWindowDragActive_;
     qint64 captureStartTimestampMs_;
+    qint64 captureStopTimestampMs_;
     quint64 totalSamplesProcessed_;
     QPoint windowDragOffset_;
 };
