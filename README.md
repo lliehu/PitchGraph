@@ -114,7 +114,7 @@ PitchGraph captures audio from your system's playback devices and displays a rea
 - **Qt 6** (or Qt 5.15+)
   - Qt Core
   - Qt Widgets
-  - Qt Multimedia (optional, for device enumeration)
+  - Qt Multimedia (used by batch MP3 decoding)
 
 - **aubio** (>= 0.4.9)
   - Pitch detection library
@@ -135,10 +135,10 @@ PitchGraph captures audio from your system's playback devices and displays a rea
 #### Linux (Ubuntu/Debian)
 ```bash
 # For PipeWire (recommended for modern systems)
-sudo apt-get install qt6-base-dev libaubio-dev libpipewire-0.3-dev
+sudo apt-get install qt6-base-dev qt6-multimedia-dev libaubio-dev libpipewire-0.3-dev
 
 # OR for PulseAudio (older systems)
-sudo apt-get install qt6-base-dev libaubio-dev libpulse-dev
+sudo apt-get install qt6-base-dev qt6-multimedia-dev libaubio-dev libpulse-dev
 ```
 
 #### Windows
@@ -176,6 +176,39 @@ The project uses CMake with platform detection:
 3. Click "Start Capture"
 4. Play audio on your system
 5. Watch the real-time pitch graph
+
+### Batch Export (CLI)
+
+PitchGraph supports headless batch analysis/export from WAV and MP3 files:
+
+```bash
+PitchGraph --batch-config path/to/batch_manifest.json
+```
+
+Manifest format:
+
+```json
+{
+  "conversation_files": [
+    "audio/conversation_01.wav",
+    "audio/conversation_02.mp3"
+  ],
+  "music_files": [
+    "audio/music_a.mp3",
+    "audio/music_b.wav"
+  ],
+  "output_dir": "exports",
+  "mix_gain_db": -18,
+  "conversation_gain_db": 0
+}
+```
+
+Behavior:
+- `conversation_files`: baseline exports (`conv_<name>__baseline.json`)
+- `conversation_files x music_files`: mixed exports (`conv_<name>__music_<name>.json`)
+- Supported input formats for batch files: `.wav`, `.mp3`
+- output files are written inside a timestamped run folder under `output_dir`
+- batch metadata includes conversation/music file paths, gain settings, baseline flag, and run index
 
 ## Configuration
 

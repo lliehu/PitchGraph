@@ -6,7 +6,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Multimedia)
 
 set(PITCHGRAPH_SOURCES
     main.cpp
@@ -14,6 +14,12 @@ set(PITCHGRAPH_SOURCES
     MainWindow.h
     PitchDetector.cpp
     PitchDetector.h
+    AnalysisSession.cpp
+    AnalysisSession.h
+    OfflineWavReader.cpp
+    OfflineWavReader.h
+    BatchExportRunner.cpp
+    BatchExportRunner.h
     AudioCapture.cpp
     AudioCapture.h
     AudioCaptureFactory.cpp
@@ -84,6 +90,7 @@ endif()
 target_link_libraries(PitchGraph PRIVATE
     Qt6::Core
     Qt6::Widgets
+    Qt6::Multimedia
     ${AUBIO_LIBRARIES}
 )
 

@@ -8,13 +8,17 @@
 #include <QContextMenuEvent>
 #include <QJsonObject>
 #include <deque>
+#include <memory>
 #include <utility>
+#include <vector>
+#include "AnalysisSession.h"
 
 class PitchGraphWidget : public QWidget {
     Q_OBJECT
 
 public:
     explicit PitchGraphWidget(QWidget* parent = nullptr);
+    void setAnalysisSession(AnalysisSession* session);
 
     void addPitchPoint(float frequency, float confidence, qint64 timestampMs = -1);
     void addAudioSamples(
@@ -41,8 +45,8 @@ public:
     ) const;
 
     // Configuration
-    void setTimeWindow(int seconds) { timeWindowSeconds_ = seconds; }
-    void setFrequencyRange(float min, float max) { minFreq_ = min; maxFreq_ = max; }
+    void setTimeWindow(int seconds);
+    void setFrequencyRange(float min, float max);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -60,28 +64,10 @@ private:
         std::vector<float> samples;
     };
 
-    struct AnalysisFrame {
-        qint64 timestamp;
-        float frequencyHz;
-        float confidence;
-        float rms;
-        unsigned int sampleCount;
-        quint64 centerSampleIndex;
-        bool voiced;
-    };
-
-    struct RawAudioChunk {
-        qint64 startTimestamp;
-        qint64 centerTimestamp;
-        quint64 startSampleIndex;
-        unsigned int sampleCount;
-        std::vector<float> samples;
-    };
-
     std::deque<PitchPoint> pitchData_;
     std::deque<WaveformData> waveformData_;
-    std::deque<AnalysisFrame> analysisFrames_;
-    std::deque<RawAudioChunk> rawAudioChunks_;
+    std::unique_ptr<AnalysisSession> ownedAnalysisSession_;
+    AnalysisSession* analysisSession_;
     QTimer* updateTimer_;
 
     // Configuration
@@ -94,8 +80,7 @@ private:
 
     void removeOldData(qint64 nowMs);
     void removeOldWaveformData(qint64 nowMs);
-    void removeOldAnalysisFrames(qint64 nowMs);
-    void removeOldRawAudioChunks(qint64 nowMs);
+    void syncSessionDisplayConfig();
     void drawGrid(QPainter& painter);
     void drawWaveform(QPainter& painter);
     void drawPitchCurve(QPainter& painter);

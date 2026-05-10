@@ -3,28 +3,18 @@
 #include <QApplication>
 #include <QContextMenuEvent>
 #include <QDateTime>
-#include <QFile>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonValue>
 #include <QMenu>
 #include <QPen>
 #include <algorithm>
 #include <cmath>
 
-namespace {
-QJsonValue toJsonNumberOrNull(float value) {
-    if (!std::isfinite(value)) {
-        return QJsonValue(QJsonValue::Null);
-    }
-    return QJsonValue(static_cast<double>(value));
-}
-}
-
 PitchGraphWidget::PitchGraphWidget(QWidget* parent)
     : QWidget(parent), timeWindowSeconds_(10), retentionSeconds_(120), minFreq_(50.0f), maxFreq_(1000.0f),
       isFrozen_(false), frozenTimestampMs_(0) {
+
+    ownedAnalysisSession_ = std::make_unique<AnalysisSession>();
+    analysisSession_ = ownedAnalysisSession_.get();
+    syncSessionDisplayConfig();
 
     setMinimumSize(400, 300);
     setStyleSheet("background-color: white;");
@@ -33,6 +23,22 @@ PitchGraphWidget::PitchGraphWidget(QWidget* parent)
     updateTimer_ = new QTimer(this);
     connect(updateTimer_, &QTimer::timeout, this, QOverload<>::of(&QWidget::update));
     updateTimer_->start(33); // ~30 FPS
+}
+
+void PitchGraphWidget::setAnalysisSession(AnalysisSession* session) {
+    analysisSession_ = (session != nullptr) ? session : ownedAnalysisSession_.get();
+    syncSessionDisplayConfig();
+}
+
+void PitchGraphWidget::setTimeWindow(int seconds) {
+    timeWindowSeconds_ = std::max(1, seconds);
+    syncSessionDisplayConfig();
+}
+
+void PitchGraphWidget::setFrequencyRange(float min, float max) {
+    minFreq_ = std::max(1.0f, min);
+    maxFreq_ = std::max(minFreq_ + 1.0f, max);
+    syncSessionDisplayConfig();
 }
 
 void PitchGraphWidget::addPitchPoint(float frequency, float confidence, qint64 timestampMs) {
@@ -49,6 +55,10 @@ void PitchGraphWidget::addPitchPoint(float frequency, float confidence, qint64 t
         }
 
         removeOldData(QDateTime::currentMSecsSinceEpoch());
+
+        if (analysisSession_ != nullptr) {
+            analysisSession_->addPitchPoint(frequency, confidence, point.timestamp);
+        }
     }
 }
 
@@ -87,20 +97,11 @@ void PitchGraphWidget::addAudioSamples(
         waveformData_.pop_front();
     }
 
-    RawAudioChunk rawChunk;
-    rawChunk.startTimestamp = chunkStartTimestamp;
-    rawChunk.centerTimestamp = chunkCenterTimestamp;
-    rawChunk.startSampleIndex = startSampleIndex;
-    rawChunk.sampleCount = size;
-    rawChunk.samples.assign(data, data + size);
-    rawAudioChunks_.push_back(std::move(rawChunk));
-
-    if (rawAudioChunks_.size() > 6000) {
-        rawAudioChunks_.pop_front();
-    }
-
     removeOldWaveformData(nowMs);
-    removeOldRawAudioChunks(nowMs);
+
+    if (analysisSession_ != nullptr) {
+        analysisSession_->addRawAudioChunk(data, size, chunkStartTimestamp, sampleRateHz, startSampleIndex);
+    }
 }
 
 void PitchGraphWidget::addAnalysisFrame(
@@ -111,21 +112,9 @@ void PitchGraphWidget::addAnalysisFrame(
     unsigned int sampleCount,
     quint64 centerSampleIndex
 ) {
-    AnalysisFrame frame;
-    frame.timestamp = (timestampMs >= 0) ? timestampMs : QDateTime::currentMSecsSinceEpoch();
-    frame.frequencyHz = frequencyHz;
-    frame.confidence = std::clamp(confidence, 0.0f, 1.0f);
-    frame.rms = std::max(0.0f, rms);
-    frame.sampleCount = sampleCount;
-    frame.centerSampleIndex = centerSampleIndex;
-    frame.voiced = frequencyHz > 0.0f;
-    analysisFrames_.push_back(frame);
-
-    if (analysisFrames_.size() > 7000) {
-        analysisFrames_.pop_front();
+    if (analysisSession_ != nullptr) {
+        analysisSession_->addAnalysisFrame(timestampMs, frequencyHz, confidence, rms, sampleCount, centerSampleIndex);
     }
-
-    removeOldAnalysisFrames(QDateTime::currentMSecsSinceEpoch());
 }
 
 void PitchGraphWidget::setFrozen(bool frozen, qint64 freezeTimestampMs) {
@@ -143,8 +132,9 @@ void PitchGraphWidget::setFrozen(bool frozen, qint64 freezeTimestampMs) {
 void PitchGraphWidget::clear() {
     pitchData_.clear();
     waveformData_.clear();
-    analysisFrames_.clear();
-    rawAudioChunks_.clear();
+    if (analysisSession_ != nullptr) {
+        analysisSession_->clear();
+    }
     update();
 }
 
@@ -153,94 +143,13 @@ bool PitchGraphWidget::exportToJsonFile(
     const QJsonObject& sessionMetadata,
     QString* errorMessage
 ) const {
-    QFile file(filePath);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+    if (analysisSession_ == nullptr) {
         if (errorMessage != nullptr) {
-            *errorMessage = file.errorString();
+            *errorMessage = QStringLiteral("Analysis session is not configured.");
         }
         return false;
     }
-
-    QJsonObject root;
-    root.insert("schema", QStringLiteral("pitchgraph.export.v2"));
-    root.insert("generated_at_iso", QDateTime::currentDateTime().toString(Qt::ISODateWithMs));
-    root.insert("session", sessionMetadata);
-
-    QJsonObject display;
-    display.insert("time_window_seconds", timeWindowSeconds_);
-    display.insert("retention_seconds", retentionSeconds_);
-    display.insert("frequency_range_hz", QJsonArray{minFreq_, maxFreq_});
-    root.insert("display", display);
-
-    QJsonArray pitchTimeline;
-    for (const auto& point : pitchData_) {
-        QJsonObject pitchPoint;
-        pitchPoint.insert("timestamp_ms", static_cast<double>(point.timestamp));
-        pitchPoint.insert("timestamp_iso", QDateTime::fromMSecsSinceEpoch(point.timestamp).toString(Qt::ISODateWithMs));
-        pitchPoint.insert("frequency_hz", toJsonNumberOrNull(point.frequency));
-        pitchPoint.insert("confidence", toJsonNumberOrNull(point.confidence));
-        pitchTimeline.append(pitchPoint);
-    }
-    root.insert("pitch_points_voiced_only", pitchTimeline);
-
-    QJsonArray frames;
-    for (const auto& frame : analysisFrames_) {
-        QJsonObject frameJson;
-        frameJson.insert("timestamp_ms", static_cast<double>(frame.timestamp));
-        frameJson.insert("timestamp_iso", QDateTime::fromMSecsSinceEpoch(frame.timestamp).toString(Qt::ISODateWithMs));
-        frameJson.insert("sample_count", static_cast<int>(frame.sampleCount));
-        frameJson.insert("center_sample_index", static_cast<double>(frame.centerSampleIndex));
-        frameJson.insert("rms", toJsonNumberOrNull(frame.rms));
-        frameJson.insert("confidence", toJsonNumberOrNull(frame.confidence));
-        frameJson.insert("voiced", frame.voiced);
-        frameJson.insert(
-            "pitch_hz",
-            frame.voiced ? toJsonNumberOrNull(frame.frequencyHz) : QJsonValue(QJsonValue::Null)
-        );
-        frames.append(frameJson);
-    }
-    root.insert("frames", frames);
-
-    QJsonObject rawAudio;
-    rawAudio.insert("encoding", QStringLiteral("pcm_f32le"));
-    rawAudio.insert("channels", 1);
-
-    QJsonArray chunks;
-    for (const auto& chunk : rawAudioChunks_) {
-        QJsonObject chunkJson;
-        chunkJson.insert("start_timestamp_ms", static_cast<double>(chunk.startTimestamp));
-        chunkJson.insert(
-            "start_timestamp_iso",
-            QDateTime::fromMSecsSinceEpoch(chunk.startTimestamp).toString(Qt::ISODateWithMs)
-        );
-        chunkJson.insert("center_timestamp_ms", static_cast<double>(chunk.centerTimestamp));
-        chunkJson.insert(
-            "center_timestamp_iso",
-            QDateTime::fromMSecsSinceEpoch(chunk.centerTimestamp).toString(Qt::ISODateWithMs)
-        );
-        chunkJson.insert("start_sample_index", static_cast<double>(chunk.startSampleIndex));
-        chunkJson.insert("sample_count", static_cast<int>(chunk.sampleCount));
-
-        QJsonArray sampleArray;
-        for (const float sample : chunk.samples) {
-            sampleArray.append(toJsonNumberOrNull(sample));
-        }
-        chunkJson.insert("samples", sampleArray);
-        chunks.append(chunkJson);
-    }
-    rawAudio.insert("chunks", chunks);
-    root.insert("raw_audio", rawAudio);
-
-    const QJsonDocument document(root);
-    const qint64 bytesWritten = file.write(document.toJson(QJsonDocument::Indented));
-    if (bytesWritten < 0) {
-        if (errorMessage != nullptr) {
-            *errorMessage = file.errorString();
-        }
-        return false;
-    }
-
-    return true;
+    return analysisSession_->exportToJsonFile(filePath, sessionMetadata, errorMessage);
 }
 
 void PitchGraphWidget::removeOldData(qint64 nowMs) {
@@ -259,19 +168,9 @@ void PitchGraphWidget::removeOldWaveformData(qint64 nowMs) {
     }
 }
 
-void PitchGraphWidget::removeOldAnalysisFrames(qint64 nowMs) {
-    const qint64 cutoff = nowMs - (retentionSeconds_ * 1000);
-
-    while (!analysisFrames_.empty() && analysisFrames_.front().timestamp < cutoff) {
-        analysisFrames_.pop_front();
-    }
-}
-
-void PitchGraphWidget::removeOldRawAudioChunks(qint64 nowMs) {
-    const qint64 cutoff = nowMs - (retentionSeconds_ * 1000);
-
-    while (!rawAudioChunks_.empty() && rawAudioChunks_.front().centerTimestamp < cutoff) {
-        rawAudioChunks_.pop_front();
+void PitchGraphWidget::syncSessionDisplayConfig() {
+    if (analysisSession_ != nullptr) {
+        analysisSession_->setDisplayConfig(timeWindowSeconds_, retentionSeconds_, minFreq_, maxFreq_);
     }
 }
 
