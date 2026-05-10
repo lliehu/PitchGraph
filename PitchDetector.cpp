@@ -11,6 +11,11 @@ constexpr float kMinValidPitchHz = 70.0f;
 constexpr float kMaxValidPitchHz = 500.0f;
 constexpr float kMinHopConfidence = 0.22f;
 constexpr float kMinOutputConfidence = 0.28f;
+constexpr float kBootstrapMaxPitchHz = 330.0f;
+constexpr float kBootstrapHighPitchMinConfidence = 0.92f;
+constexpr float kAdaptiveConfidencePitchPivotHz = 280.0f;
+constexpr float kAdaptiveConfidenceSlopePerHz = 0.0045f;
+constexpr float kAdaptiveConfidenceMax = 0.95f;
 constexpr float kSlewGuardHighJumpCents = 360.0f;
 constexpr float kSlewGuardMediumJumpCents = 260.0f;
 constexpr float kExtremeDeviationCents = 320.0f;
@@ -20,8 +25,8 @@ constexpr float kEnergyFloorQuantile = 0.20f;      // Robust floor estimate.
 constexpr float kEnergyFloorMultiplier = 1.50f;
 constexpr float kEnergyFloorOffset = 0.015f;
 constexpr int kSpeechEnergyHangoverHops = 16;      // ~85ms to avoid choppy gating.
-constexpr float kEnergyGateStrongConfidence = 0.82f;
-constexpr float kEnergyGateContinuityMinReferenceConfidence = 0.45f;
+constexpr float kEnergyGateStrongConfidence = 0.90f;
+constexpr float kEnergyGateContinuityMinReferenceConfidence = 0.55f;
 constexpr float kEnergyGateContinuityMinHopConfidence = 0.34f;
 constexpr float kEnergyGateContinuityMaxDeviationCents = 170.0f;
 
@@ -85,6 +90,14 @@ float quantileOf(const std::deque<float>& values, float quantile) {
     const size_t idx = static_cast<size_t>(q * static_cast<float>(copy.size() - 1));
     std::nth_element(copy.begin(), copy.begin() + static_cast<std::ptrdiff_t>(idx), copy.end());
     return copy[idx];
+}
+
+float minRequiredConfidenceForPitch(float pitchHz) {
+    if (pitchHz <= 0.0f) {
+        return kMinHopConfidence;
+    }
+    const float extra = std::max(0.0f, pitchHz - kAdaptiveConfidencePitchPivotHz) * kAdaptiveConfidenceSlopePerHz;
+    return std::min(kAdaptiveConfidenceMax, kMinHopConfidence + extra);
 }
 }
 
@@ -173,6 +186,18 @@ float PitchDetector::detectPitch(const float* buffer, unsigned int size) {
             continue;
         }
 
+        const float minRequiredConfidence = minRequiredConfidenceForPitch(hopPitch);
+        if (hopConfidence < minRequiredConfidence) {
+            continue;
+        }
+
+        const bool trackingBootstrapped = recentVoicedPitches_.size() >= 2;
+        if (!trackingBootstrapped && hopPitch > kBootstrapMaxPitchHz &&
+            hopConfidence < kBootstrapHighPitchMinConfidence) {
+            // Avoid initializing the contour from high-pitched instrumental leakage.
+            continue;
+        }
+
         // Prefer speech-driven pitch: background music usually keeps RMS near a stationary floor,
         // while speech introduces clear short-term energy bursts above that floor.
         bool nearReferencePitch = false;
@@ -193,7 +218,7 @@ float PitchDetector::detectPitch(const float* buffer, unsigned int size) {
         const bool continuityLikely =
             nearReferencePitch &&
             referenceConfidence >= kEnergyGateContinuityMinReferenceConfidence &&
-            hopConfidence >= kEnergyGateContinuityMinHopConfidence;
+            hopConfidence >= std::max(kEnergyGateContinuityMinHopConfidence, minRequiredConfidence);
         const bool strongConfidenceHop = hopConfidence >= kEnergyGateStrongConfidence;
         if (!speechLikelyByEnergy && !continuityLikely && !strongConfidenceHop) {
             continue;
