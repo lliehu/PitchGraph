@@ -15,6 +15,7 @@ public:
 
     bool start(unsigned int sampleRate = 44100) override;
     void stop() override;
+    QString backendName() const override;
 
 protected:
     void run() override;

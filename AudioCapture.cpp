@@ -27,3 +27,10 @@ void AudioCapture::stop() {
         backend_->stop();
     }
 }
+
+QString AudioCapture::backendName() const {
+    if (!backend_) {
+        return QStringLiteral("Unknown");
+    }
+    return backend_->backendName();
+}

@@ -59,6 +59,10 @@ void PulseAudioCapture::stop() {
     }
 }
 
+QString PulseAudioCapture::backendName() const {
+    return QStringLiteral("PULSEAUDIO_MONITOR");
+}
+
 void PulseAudioCapture::run() {
     std::vector<float> buffer(bufferSize_);
     int errorCode = 0;

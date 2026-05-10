@@ -15,6 +15,7 @@ public:
 
     virtual bool start(unsigned int sampleRate = 44100) = 0;
     virtual void stop() = 0;
+    virtual QString backendName() const = 0;
 
 signals:
     void audioDataReady(const QVector<float>& data);
@@ -30,6 +31,7 @@ public:
 
     bool start(unsigned int sampleRate = 44100);
     void stop();
+    QString backendName() const;
 
 signals:
     void audioDataReady(const QVector<float>& data);

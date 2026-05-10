@@ -181,6 +181,10 @@ void WasapiAudioCapture::stop() {
     }
 }
 
+QString WasapiAudioCapture::backendName() const {
+    return QStringLiteral("WASAPI_LOOPBACK");
+}
+
 void WasapiAudioCapture::run() {
     const HRESULT initResult = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     const bool shouldUninitialize = SUCCEEDED(initResult);
